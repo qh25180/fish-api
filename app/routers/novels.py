@@ -149,6 +149,7 @@ _INDEX_STYLE = """
   .card:hover { background: #e9ecef; }
   .card-title { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
   .card-desc { font-size: 13px; color: #666; }
+</style>
 """
 
 
