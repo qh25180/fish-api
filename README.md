@@ -68,6 +68,7 @@ cp .env.example .env
 | `REMOTE_DOWNLOAD_ALLOW_INTRANET` | `false` | 是否允许远程下载内网地址的文件 |
 | `UPLOAD_ENABLED` | `false` | 是否启用文件上传接口 |
 | `UPLOAD_TIMEOUT_SECONDS` | `300` | 上传超时时间（秒） |
+| `UPLOAD_CHUNK_SIZE_KB` | `512` | 分片上传每片大小（KB） |
 | `FILE_DOWNLOAD_ENABLED` | `false` | 是否启用文件下载接口 |
 | `MAX_FILE_SIZE_MB` | `50` | 单个文件大小上限（MB） |
 | `DOWNLOAD_TIMEOUT_SECONDS` | `30` | 远程拉取下载超时（秒） |
@@ -250,6 +251,7 @@ curl -o output.txt "http://localhost:8000/api/v1/novels/%E7%A4%BA%E4%BE%8B_%E6%B
 - **路径穿越防护**：所有文件访问均做路径校验，确保安全
 - **防同名覆盖**：下载文件时若文件名已存在，自动追加 `(1)`、`(2)` 等序号
 - **下载大小限制**：通过配置限制单个下载文件的大小，防止资源滥用
+- **分片上传**：大文件自动切分为多个小块分批传输，支持断点续传，避免超时失败
 
 ---
 
