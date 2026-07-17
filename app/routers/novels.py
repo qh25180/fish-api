@@ -5,7 +5,7 @@ import secrets
 
 import aiofiles
 from fastapi import APIRouter, HTTPException, Query, File, UploadFile, Form
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 
 from app.models import (
     NovelListResponse,
@@ -161,7 +161,7 @@ async def upload_file(
     """上传本地文件到服务器配置目录。
 
     需要配置 UPLOAD_ENABLED=true 开启此接口。
-    如果配置了 DOWNLOAD_TOKEN，需在表单中传入一致的 token。
+    如果配置了 API_TOKEN，需在表单中传入一致的 token。
     """
     # 开关检查
     if not settings.upload_enabled:
@@ -171,8 +171,8 @@ async def upload_file(
         )
 
     # Token 验证（配置为空字符串则跳过）
-    if settings.download_token:
-        if not token or not secrets.compare_digest(token, settings.download_token):
+    if settings.api_token:
+        if not token or not secrets.compare_digest(token, settings.api_token):
             raise HTTPException(
                 status_code=403,
                 detail="无效的访问口令",
@@ -224,20 +224,20 @@ async def upload_file(
 async def download_novel(request: DownloadRequest):
     """从 URL 下载文件到配置目录（自动防同名覆盖）。
 
-    需要配置 DOWNLOAD_ENABLED=true 开启此接口。
-    如果配置了 DOWNLOAD_TOKEN，需在请求体中传入一致的 token。
+    需要配置 REMOTE_DOWNLOAD_ENABLED=true 开启此接口。
+    如果配置了 API_TOKEN，需在请求体中传入一致的 token。
     """
     # 开关检查
-    if not settings.download_enabled:
+    if not settings.remote_download_enabled:
         raise HTTPException(
             status_code=403,
-            detail="远程下载功能未启用（DOWNLOAD_ENABLED=false）",
+            detail="远程下载功能未启用（REMOTE_DOWNLOAD_ENABLED=false）",
         )
 
     # Token 验证（配置为空字符串则跳过）
-    if settings.download_token:
+    if settings.api_token:
         token = request.token or ""
-        if not secrets.compare_digest(token, settings.download_token):
+        if not secrets.compare_digest(token, settings.api_token):
             raise HTTPException(
                 status_code=403,
                 detail="无效的访问口令",
@@ -258,3 +258,49 @@ async def download_novel(request: DownloadRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
     return DownloadResponse(**result)
+
+
+# ─── 文件下载（将服务器文件返回给客户端）────────────
+
+@router.get("/{filename:path}/download")
+async def download_file(
+    filename: str,
+    token: str | None = Query(None, description="访问口令"),
+):
+    """下载服务器上的文件到本地（浏览器/curl 直接访问）。
+
+    需要配置 FILE_DOWNLOAD_ENABLED=true 开启此接口。
+    如果配置了 API_TOKEN，需在查询参数中传入一致的 token。
+    """
+    # 开关检查
+    if not settings.file_download_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="文件下载未启用（FILE_DOWNLOAD_ENABLED=false）",
+        )
+
+    # Token 验证（配置为空字符串则跳过）
+    if settings.api_token:
+        if not token or not secrets.compare_digest(token, settings.api_token):
+            raise HTTPException(
+                status_code=403,
+                detail="无效的访问口令",
+            )
+
+    # 安全路径校验
+    try:
+        file_path = file_service._safe_path(filename)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    if not file_path.is_file():
+        raise HTTPException(status_code=400, detail="无效的文件")
+
+    return FileResponse(
+        path=str(file_path),
+        filename=file_path.name,
+        media_type="application/octet-stream",
+    )

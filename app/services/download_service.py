@@ -41,7 +41,7 @@ def _check_url_allowed(url: str) -> None:
     """检查 URL 目标地址是否允许下载。
 
     阻止回环/链路本地地址；
-    私有地址仅在 download_allow_intranet 开启时放行。
+    私有地址仅在 remote_download_allow_intranet 开启时放行。
     """
     host = urlparse(url).hostname
     if not host:
@@ -68,9 +68,9 @@ def _check_url_allowed(url: str) -> None:
         ip = ipaddress.ip_address(ip_str)
         if ip.is_loopback or ip.is_link_local:
             raise ValueError("不允许下载回环或链路本地地址")
-        if ip.is_private and not settings.download_allow_intranet:
+        if ip.is_private and not settings.remote_download_allow_intranet:
             raise ValueError(
-                "内网下载未开放（设置 DOWNLOAD_ALLOW_INTRANET=true 可开启）"
+                "内网下载未开放（设置 REMOTE_DOWNLOAD_ALLOW_INTRANET=true 可开启）"
             )
 
 

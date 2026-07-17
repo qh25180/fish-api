@@ -63,12 +63,13 @@ cp .env.example .env
 | `TEXT_FILES_DIR` | `./novels` | 文本文件存放目录 |
 | `TEXT_FILE_EXTENSIONS` | `.txt,.md` | 允许的文件扩展名 |
 | `DEFAULT_ENCODING` | `auto` | 默认编码（auto 表示自动检测） |
-| `DOWNLOAD_ENABLED` | `false` | 是否启用远程下载接口 |
-| `DOWNLOAD_TOKEN` | `qhapi-token` | 下载访问口令（留空则不验证） |
-| `DOWNLOAD_ALLOW_INTRANET` | `false` | 允许下载内网地址的文件 |
+| `REMOTE_DOWNLOAD_ENABLED` | `false` | 是否启用远程拉取下载接口 |
+| `API_TOKEN` | `qhapi-token` | 通用 API 访问口令（留空则不验证） |
+| `REMOTE_DOWNLOAD_ALLOW_INTRANET` | `false` | 是否允许远程下载内网地址的文件 |
 | `UPLOAD_ENABLED` | `false` | 是否启用文件上传接口 |
-| `MAX_FILE_SIZE_MB` | `50` | 下载文件大小上限（MB） |
-| `DOWNLOAD_TIMEOUT_SECONDS` | `30` | 下载超时时间（秒） |
+| `FILE_DOWNLOAD_ENABLED` | `false` | 是否启用文件下载接口 |
+| `MAX_FILE_SIZE_MB` | `50` | 单个文件大小上限（MB） |
+| `DOWNLOAD_TIMEOUT_SECONDS` | `30` | 远程拉取下载超时（秒） |
 
 ### 3. 放入文本文件
 
@@ -84,7 +85,31 @@ venv/bin/uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 ### 5. 访问 API 文档
 
-打开浏览器访问 `http://<服务器IP>:8000/docs` 查看 Swagger 交互式文档。
+如果配置了 `API_TOKEN`，Swagger 文档页面需要传入 token 才能访问：
+
+```
+http://<服务器IP>:8000/docs?token=你的API_TOKEN
+```
+
+未配置 `API_TOKEN` 时直接访问 `/docs` 即可。
+
+---
+
+## Token 验证机制
+
+配置 `API_TOKEN` 后，以下接口需要验证 token：
+
+| 接口 | Token 传入方式 | 说明 |
+|------|---------------|------|
+| `POST /download`（远程拉取） | 请求体 `token` 字段 | 拉取 URL 文件到服务器 |
+| `POST /upload`（本地上传） | 表单 `token` 字段 | 上传本地文件到服务器 |
+| `GET /{filename}/download`（文件下载） | 查询参数 `?token=xxx` | 从服务器下载文件到本地 |
+| `GET /docs`（Swagger 文档） | 查询参数 `?token=xxx` | 查看交互式 API 文档 |
+
+> 不需要 Token 的接口：文本文件列表、章节列表、内容读取、健康检查等纯读取接口。
+> 如 `API_TOKEN` 为空字符串，以上所有验证跳过。
+
+---
 
 ## API 接口
 
@@ -94,12 +119,15 @@ venv/bin/uvicorn main:app --reload --host 0.0.0.0 --port 8000
 | `GET` | `/api/v1/novels/{filename}/chapters` | 获取文件的章节列表 |
 | `GET` | `/api/v1/novels/{filename}/chapters/{chapter_number}` | 按章节获取内容（支持章节内偏移） |
 | `GET` | `/api/v1/novels/{filename}/content` | 按全局偏移获取内容（支持按章节定位） |
-| `POST` | `/api/v1/novels/download` | 从 URL 下载文件（需开启 + token 验证） |
-| `POST` | `/api/v1/novels/upload` | 上传本地文件（需开启 + token 验证） |
+| `POST` | `/api/v1/novels/download` | 远程拉取 URL 文件（需 REMOTE_DOWNLOAD_ENABLED=true） |
+| `POST` | `/api/v1/novels/upload` | 上传本地文件（需 UPLOAD_ENABLED=true） |
 | `GET` | `/api/v1/novels/upload` | 浏览器访问的上传页面 |
+| `GET` | `/api/v1/novels/{filename}/download` | 下载服务器文件（需 FILE_DOWNLOAD_ENABLED=true） |
 | `GET` | `/health` | 健康检查 |
 
-> **下载/上传接口说明**：需在 `.env` 中设置 `DOWNLOAD_ENABLED=true` 开启。如果配置了 `DOWNLOAD_TOKEN`，请求体/表单中需携带匹配的 `token` 字段（未配置或为空则跳过验证）。默认令牌首次启动时会自动生成并输出到控制台。
+> **Token 验证说明**：如果配置了 `API_TOKEN`，上传/下载/远程拉取接口需传入匹配的 `token`（未配置或为空则跳过验证）。默认令牌首次启动时会自动生成并输出到控制台。
+
+> **Swagger 文档**：需传入 `?token=xxx` 访问 `/docs`。
 
 ### 定位方式一览
 
@@ -148,7 +176,7 @@ curl "http://localhost:8000/api/v1/novels/示例_江南烟雨.txt/chapters/2"
 curl "http://localhost:8000/api/v1/novels/示例_江南烟雨.txt/chapters/2?start=50&offset=100"
 ```
 
-**下载文件（需开启 DOWNLOAD_ENABLED=true）：**
+**下载文件（需开启 REMOTE_DOWNLOAD_ENABLED=true）：**
 ```bash
 # 未配口令时
 curl -X POST http://localhost:8000/api/v1/novels/download \
@@ -173,7 +201,16 @@ curl -X POST http://localhost:8000/api/v1/novels/upload \
   -F "token=你的口令"
 ```
 
-浏览器上传：访问 `http://<服务器IP>:8000/api/v1/novels/upload-page` 打开可视化上传页面。
+浏览器上传：访问 `http://<服务器IP>:8000/api/v1/novels/upload` 打开可视化上传页面。
+
+**下载服务器文件到本地（需开启 FILE_DOWNLOAD_ENABLED=true）：**
+```bash
+# 浏览器直接访问
+# http://<服务器IP>:8000/api/v1/novels/示例_江南烟雨.txt/download?token=你的口令
+
+# curl 下载
+curl -o output.txt "http://localhost:8000/api/v1/novels/%E7%A4%BA%E4%BE%8B_%E6%B1%9F%E5%8D%97%E7%83%9F%E9%9B%A8.txt/download?token=你的口令"
+```
 
 ## 功能特性
 

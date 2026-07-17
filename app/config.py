@@ -11,10 +11,11 @@ class Settings(BaseSettings):
     default_encoding: str = "auto"
     max_file_size_mb: int = 50
     download_timeout_seconds: int = 30
-    download_token: str = "qhapi-token"
-    download_enabled: bool = False
-    download_allow_intranet: bool = False
+    api_token: str = "qhapi-token"
+    remote_download_enabled: bool = False
+    remote_download_allow_intranet: bool = False
     upload_enabled: bool = False
+    file_download_enabled: bool = False
 
     @property
     def text_file_extensions_list(self) -> List[str]:
