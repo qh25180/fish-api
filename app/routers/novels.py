@@ -4,8 +4,9 @@ import os
 import secrets
 
 import aiofiles
-from fastapi import APIRouter, HTTPException, Query, File, UploadFile, Form
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi import APIRouter, HTTPException, Query, File, UploadFile, Form, Request
+from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
+from urllib.parse import quote
 
 from app.models import (
     NovelListResponse,
@@ -118,37 +119,51 @@ async def read_content(
 
 # ─── 上传页面 ───────────────────────────────────────
 
-@router.get("/upload", response_class=HTMLResponse, include_in_schema=False)
-async def upload_page():
+@router.get("/upload", response_class=HTMLResponse, summary="上传页面（浏览器访问）")
+async def upload_page(
+    success: str | None = None,
+    error: str | None = None,
+    filename: str | None = None,
+):
     """简易文件上传页面（浏览器访问用）。"""
-    html = """<!DOCTYPE html>
+    msg_html = ""
+    if success:
+        msg_html = f'<div class="msg success">✅ 上传成功: {success}</div>'
+    elif error:
+        msg_html = f'<div class="msg error">❌ {error}</div>'
+
+    html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <title>文件上传</title>
 <style>
-  body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }
-  form { border: 1px solid #ddd; padding: 24px; border-radius: 8px; background: #fafafa; }
-  label { display: block; margin: 12px 0 4px; font-weight: bold; }
-  input[type=file], input[type=text] { width: 100%; padding: 8px; box-sizing: border-box; }
-  button { margin-top: 16px; padding: 10px 24px; background: #007acc; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
-  button:hover { background: #005999; }
-  .tip { color: #666; font-size: 14px; margin-top: 8px; }
+  body {{ font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }}
+  form {{ border: 1px solid #ddd; padding: 24px; border-radius: 8px; background: #fafafa; }}
+  label {{ display: block; margin: 12px 0 4px; font-weight: bold; }}
+  input[type=file], input[type=text] {{ width: 100%; padding: 8px; box-sizing: border-box; }}
+  button {{ margin-top: 16px; padding: 10px 24px; background: #007acc; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }}
+  button:hover {{ background: #005999; }}
+  .tip {{ color: #666; font-size: 14px; margin-top: 8px; }}
+  .msg {{ padding: 12px; border-radius: 4px; margin-bottom: 16px; }}
+  .msg.success {{ background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }}
+  .msg.error {{ background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }}
 </style>
 </head>
 <body>
 <h2>📤 文件上传</h2>
+{msg_html}
 <form action="/api/v1/novels/upload" method="post" enctype="multipart/form-data">
   <label for="file">选择文件</label>
   <input type="file" name="file" id="file" required>
   <label for="token">访问口令</label>
   <input type="text" name="token" id="token" placeholder="如需口令请在此输入">
   <button type="submit">上传</button>
-  <div class="tip">支持的文件类型: """ + ", ".join(settings.text_file_extensions_list) + """</div>
+  <div class="tip">支持的文件类型: {', '.join(settings.text_file_extensions_list)}</div>
 </form>
 </body>
 </html>"""
-    return html
+    return HTMLResponse(content=html)
 
 
 # ─── 文件上传 ───────────────────────────────────────
@@ -157,29 +172,38 @@ async def upload_page():
 async def upload_file(
     file: UploadFile = File(...),
     token: str | None = Form(None),
+    request: Request = None,
 ):
     """上传本地文件到服务器配置目录。
 
     需要配置 UPLOAD_ENABLED=true 开启此接口。
     如果配置了 API_TOKEN，需在表单中传入一致的 token。
+    浏览器上传成功后自动重定向回上传页面并显示结果。
     """
+    # 判断是否为浏览器请求
+    accept = request.headers.get("accept", "") if request else ""
+    is_browser = "text/html" in accept
+
     # 开关检查
     if not settings.upload_enabled:
-        raise HTTPException(
-            status_code=403,
-            detail="上传功能未启用（UPLOAD_ENABLED=false）",
-        )
+        err_msg = "上传功能未启用（UPLOAD_ENABLED=false）"
+        if is_browser:
+            return RedirectResponse(url=f"/api/v1/novels/upload?error={quote(err_msg)}", status_code=303)
+        raise HTTPException(status_code=403, detail=err_msg)
 
     # Token 验证（配置为空字符串则跳过）
     if settings.api_token:
         if not token or not secrets.compare_digest(token, settings.api_token):
-            raise HTTPException(
-                status_code=403,
-                detail="无效的访问口令",
-            )
+            err_msg = "无效的访问口令"
+            if is_browser:
+                return RedirectResponse(url=f"/api/v1/novels/upload?error={quote(err_msg)}", status_code=303)
+            raise HTTPException(status_code=403, detail=err_msg)
 
     if not file.filename:
-        raise HTTPException(status_code=400, detail="未选择文件")
+        err_msg = "未选择文件"
+        if is_browser:
+            return RedirectResponse(url=f"/api/v1/novels/upload?error={quote(err_msg)}", status_code=303)
+        raise HTTPException(status_code=400, detail=err_msg)
 
     # 安全处理文件名
     safe_name = os.path.basename(file.filename)
@@ -210,8 +234,19 @@ async def upload_file(
         raise
     except Exception as e:
         save_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=500, detail=f"文件写入失败: {e}")
+        err_msg = f"文件写入失败: {e}"
+        if is_browser:
+            return RedirectResponse(url=f"/api/v1/novels/upload?error={quote(err_msg)}", status_code=303)
+        raise HTTPException(status_code=500, detail=err_msg)
 
+    # 浏览器请求 → 重定向回上传页面显示成功
+    if is_browser:
+        return RedirectResponse(
+            url=f"/api/v1/novels/upload?success={quote(save_path.name)}",
+            status_code=303,
+        )
+
+    # API 请求 → 返回 JSON
     return UploadResponse(
         filename=save_path.name,
         save_path=str(save_path),

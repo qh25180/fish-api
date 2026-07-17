@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     default_encoding: str = "auto"
     max_file_size_mb: int = 50
     download_timeout_seconds: int = 30
+    upload_timeout_seconds: int = 300
     api_token: str = "qhapi-token"
     remote_download_enabled: bool = False
     remote_download_allow_intranet: bool = False
