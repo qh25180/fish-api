@@ -53,6 +53,31 @@ async def get_chapters(filename: str):
     )
 
 
+@router.get("/{filename}/chapters/{chapter_number}", response_model=ContentResponse)
+async def get_chapter_content(
+    filename: str,
+    chapter_number: int,
+    offset: int | None = Query(
+        None, ge=1, le=50000, description="限制返回字符数，不指定则返回整章"
+    ),
+):
+    """获取指定章节的文本内容（自动从章节头截取到下一章开始）。"""
+    try:
+        result = file_service.get_chapter_content(
+            filename=filename,
+            chapter_number=chapter_number,
+            offset=offset,
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return ContentResponse(**result)
+
+
 @router.get("/{filename}/content", response_model=ContentResponse)
 async def read_content(
     filename: str,

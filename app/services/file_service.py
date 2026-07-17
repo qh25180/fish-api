@@ -210,3 +210,51 @@ def get_content(
         "content": content,
         "chapter_title": chapter_title,
     }
+
+
+def get_chapter_content(
+    filename: str,
+    chapter_number: int,
+    offset: int | None = None,
+) -> dict:
+    """获取指定章节的完整文本内容。
+
+    自动从章节起始位置截取到下一章开始位置（或文件末尾）。
+    如果指定 offset，则限制返回字符数。
+    返回 dict 与 ContentResponse schema 兼容。
+    """
+    chapters = get_chapters(filename)
+    if chapter_number < 1 or chapter_number > len(chapters):
+        raise ValueError(
+            f"章节 {chapter_number} 不存在，文件共有 {len(chapters)} 章"
+        )
+
+    ch = chapters[chapter_number - 1]
+
+    # 计算章节结束位置：下一章起始位置，或文件末尾
+    file_path = _safe_path(filename)
+    text = read_file_with_encoding(str(file_path))
+    total_length = len(text)
+
+    if chapter_number < len(chapters):
+        chapter_end = chapters[chapter_number].start_pos
+    else:
+        chapter_end = total_length
+
+    chapter_length = chapter_end - ch.start_pos
+
+    # 如果指定了 offset，取两者较小值
+    if offset is not None:
+        chapter_length = min(chapter_length, offset)
+
+    end_pos = ch.start_pos + chapter_length
+    content = text[ch.start_pos:end_pos]
+
+    return {
+        "filename": filename,
+        "start": ch.start_pos,
+        "offset": len(content),
+        "total_length": total_length,
+        "content": content,
+        "chapter_title": ch.title,
+    }
