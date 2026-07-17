@@ -1,6 +1,6 @@
-﻿"""Legado HTTP API 兼容路由。
+"""Legado HTTP API 兼容路由。
 
-提供 Dicarbene/yuedu_vscode_dicarbene 插件所需的 4 个端点。
+提供 Dicarbene/yuedu_vscode_dicarbene 插件所需的端点。
 所有响应均包装在 LegadoApiResponse 统一格式中。
 """
 
@@ -12,6 +12,7 @@ from app.legado_models import (
     LegadoBook,
     LegadoChapter,
     LegadoBookProgress,
+    LegadoChapterProgress,
 )
 from app.services import legado_service
 
@@ -70,9 +71,26 @@ async def get_book_content(
         return fail(str(e), 500)
 
 
+@router.post("/saveBookProgressByChapter")
+async def save_book_progress_by_chapter(progress: LegadoChapterProgress):
+    """按章节标题或序号切换阅读进度（保存到该章节起始位置）。"""
+    try:
+        legado_service.save_progress_by_chapter(
+            book_url=progress.bookUrl,
+            chapter=progress.chapter,
+        )
+        return ok("进度已保存")
+    except FileNotFoundError as e:
+        return fail(str(e), 404)
+    except ValueError as e:
+        return fail(str(e), 400)
+    except Exception as e:
+        return fail(str(e), 500)
+
+
 @router.post("/saveBookProgress")
 async def save_book_progress(progress: LegadoBookProgress):
-    """保存阅读进度（写回服务端日志/持久化）。"""
+    """保存阅读进度（持久化到 JSON 文件）。"""
     try:
         legado_service.save_book_progress(
             name=progress.name,
@@ -80,6 +98,7 @@ async def save_book_progress(progress: LegadoBookProgress):
             dur_chapter_index=progress.durChapterIndex,
             dur_chapter_pos=progress.durChapterPos,
             dur_chapter_title=progress.durChapterTitle,
+            dur_chapter_time=progress.durChapterTime,
         )
         return ok("进度已保存")
     except Exception as e:

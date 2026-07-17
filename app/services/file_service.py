@@ -71,7 +71,17 @@ def _parse_chapters(text: str) -> list[ChapterInfo]:
     for pattern in CHAPTER_PATTERNS:
         for match in pattern.finditer(text):
             pos = match.start()
-            title = match.group().strip()
+            # 提取匹配位置所在行的完整内容作为章节标题
+            line_start = text.rfind("\n", 0, pos) + 1
+            line_end = text.find("\n", pos)
+            if line_end == -1:
+                line_end = len(text)
+            full_line = text[line_start:line_end].strip()
+            # 如果行内容过长（超过80字符），只取匹配部分
+            if len(full_line) > 80:
+                title = match.group().strip()
+            else:
+                title = full_line if full_line else match.group().strip()
             # Avoid near-duplicates (within 3 chars)
             if not any(abs(pos - b[0]) < 3 for b in boundaries):
                 boundaries.append((pos, title))

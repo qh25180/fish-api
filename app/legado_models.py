@@ -1,4 +1,4 @@
-﻿"""Legado HTTP API 兼容数据模型。
+"""Legado HTTP API 兼容数据模型。
 
 参考 Dicarbene/yuedu_vscode_dicarbene 的 types.ts 定义。
 """
@@ -86,3 +86,11 @@ class LegadoBookProgress(BaseModel):
     durChapterPos: int = 0
     durChapterTime: int = 0
     durChapterTitle: str = ""
+
+
+# ─── ChapterProgress（按章节切换进度）────────────────────
+
+class LegadoChapterProgress(BaseModel):
+    """按章节标题或序号切换阅读进度的请求体。"""
+    bookUrl: str
+    chapter: str

@@ -1,6 +1,9 @@
-﻿"""Legado 映射服务：将 QHAPI 内部数据模型转为 Legado 兼容格式。"""
+"""Legado 映射服务：将 QHAPI 内部数据模型转为 Legado 兼容格式。"""
 
+import json
+import time
 from pathlib import Path
+
 from app.config import settings
 from app.services.file_service import (
     list_novel_files,
@@ -13,6 +16,35 @@ from app.utils.encoding import read_file_with_encoding
 from app.legado_models import LegadoBook, LegadoChapter
 
 
+# ─── 进度持久化 ─────────────────────────────────────
+
+def _progress_file() -> Path:
+    """进度文件路径。"""
+    return settings.text_files_dir / ".legado_progress.json"
+
+
+def _load_progress() -> dict:
+    """读取进度 JSON，不存在或损坏返回空 dict。"""
+    path = _progress_file()
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_progress(data: dict):
+    """原子写入进度 JSON（先写临时文件再 rename）。"""
+    path = _progress_file()
+    tmp_path = path.with_suffix(".tmp")
+    tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp_path.replace(path)
+
+
+# ─── 书架 ───────────────────────────────────────────
+
 def get_bookshelf() -> list[LegadoBook]:
     """获取书架列表（所有文本文件 → LegadoBook 列表）。"""
     files, _ = list_novel_files(page=1, page_size=9999)
@@ -20,25 +52,33 @@ def get_bookshelf() -> list[LegadoBook]:
 
 
 def _file_to_legado_book(filename: str, total_chapters: int) -> LegadoBook:
-    """将单个文件转为 LegadoBook。"""
+    """将单个文件转为 LegadoBook，读取已保存的阅读进度。"""
     name = Path(filename).stem
-    # 尝试读取第一章标题作为 durChapterTitle
+
+    # 尝试读取第一章标题作为默认 durChapterTitle
     try:
         chapters = qhapi_get_chapters(filename)
         first_chapter_title = chapters[0].title if chapters else ""
     except Exception:
         first_chapter_title = ""
 
+    # 读取已保存的进度
+    progress = _load_progress()
+    book_progress = progress.get(name, {})
+
     return LegadoBook(
         name=name,
         author="未知作者",
         bookUrl=filename,
         totalChapterNum=total_chapters,
-        durChapterTitle=first_chapter_title,
-        durChapterIndex=0,
-        durChapterPos=0,
+        durChapterTitle=book_progress.get("durChapterTitle") or first_chapter_title,
+        durChapterIndex=book_progress.get("durChapterIndex", 0),
+        durChapterPos=book_progress.get("durChapterPos", 0),
+        durChapterTime=book_progress.get("durChapterTime", 0),
     )
 
+
+# ─── 章节列表 ───────────────────────────────────────
 
 def get_chapter_list(book_url: str) -> list[LegadoChapter]:
     """获取指定文件的章节列表 → LegadoChapter 列表。"""
@@ -54,12 +94,13 @@ def get_chapter_list(book_url: str) -> list[LegadoChapter]:
     ]
 
 
+# ─── 章节内容 ───────────────────────────────────────
+
 def get_book_content(book_url: str, chapter_index: int) -> str:
     """获取指定章节的完整文本内容（不截断）。
 
     返回纯文本字符串，插件会自己按 snippetLength 截断。
     """
-    # 获取该章节的完整内容（不指定 offset，返回整章）
     result = get_content(
         filename=book_url,
         start=0,
@@ -69,19 +110,66 @@ def get_book_content(book_url: str, chapter_index: int) -> str:
     return result["content"]
 
 
+# ─── 进度保存 ───────────────────────────────────────
+
 def save_book_progress(
     name: str,
     author: str,
     dur_chapter_index: int,
     dur_chapter_pos: int,
     dur_chapter_title: str = "",
+    dur_chapter_time: int = 0,
 ) -> None:
-    """保存阅读进度。
+    """保存阅读进度到 JSON 文件。"""
+    progress = _load_progress()
+    progress[name] = {
+        "durChapterIndex": dur_chapter_index,
+        "durChapterPos": dur_chapter_pos,
+        "durChapterTitle": dur_chapter_title,
+        "durChapterTime": dur_chapter_time or int(time.time() * 1000),
+    }
+    _save_progress(progress)
 
-    当前以日志形式记录，后续可扩展为持久化存储。
-    因为 QHAPI 的文件在服务器本地，写回进度可用于下次继续阅读。
+
+def save_progress_by_chapter(book_url: str, chapter: str) -> None:
+    """根据章节标题或序号，将进度保存到该章节起始位置。
+
+    chapter 支持两种格式：
+    - 数字字符串（如 "5"）→ 按 1-based 序号匹配
+    - 标题字符串（如 "第五章"）→ 模糊匹配章节标题（in 匹配）
     """
-    import datetime
-    now = datetime.datetime.now().isoformat()
-    print(f"[Legado Progress] {now} | {name}({author}) "
-          f"→ 章节 {dur_chapter_index + 1} 位置 {dur_chapter_pos}")
+    name = Path(book_url).stem
+    chapters = qhapi_get_chapters(book_url)
+    if not chapters:
+        raise ValueError("章节目录为空")
+
+    # 尝试数字序号匹配
+    matched = None
+    if chapter.strip().isdigit():
+        idx = int(chapter.strip())
+        if 1 <= idx <= len(chapters):
+            matched = chapters[idx - 1]
+
+    # 尝试标题模糊匹配
+    if matched is None:
+        for ch in chapters:
+            if chapter in ch.title:
+                matched = ch
+                break
+
+    if matched is None:
+        raise ValueError(f"未找到匹配的章节: {chapter}")
+
+    # 找到对应的 Legado 章节索引（0-based）
+    chapter_index = next(
+        i for i, ch in enumerate(chapters) if ch.start_pos == matched.start_pos
+    )
+
+    progress = _load_progress()
+    progress[name] = {
+        "durChapterIndex": chapter_index,
+        "durChapterPos": 0,
+        "durChapterTitle": matched.title,
+        "durChapterTime": int(time.time() * 1000),
+    }
+    _save_progress(progress)
