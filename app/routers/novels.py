@@ -29,6 +29,18 @@ from app.services import file_service, download_service
 router = APIRouter(prefix="/api/v1/novels", tags=["novels"])
 
 
+# ─── 辅助：返回索引链接 ─────────────────────────────
+
+def _back_to_index_html(token: str | None) -> str:
+    """如果 token 有效，返回「← 返回索引」链接 HTML，否则返回空字符串。"""
+    if not token:
+        return ""
+    t = quote(token, safe="")
+    return f'<div style="margin-bottom:12px"><a href="/api/v1/novels/pages?token={t}" style="color:#007acc;text-decoration:none;font-size:14px;">← 返回索引</a></div>'
+
+
+# ─── 文件列表 API ───────────────────────────────────
+
 @router.get("", response_model=NovelListResponse)
 async def list_novels(
     page: int = Query(1, ge=1, description="页码"),
@@ -50,6 +62,8 @@ async def list_novels(
         novels=files,
     )
 
+
+# ─── 章节 / 内容 API ───────────────────────────────
 
 @router.get("/{filename}/chapters", response_model=ChapterListResponse)
 async def get_chapters(filename: str):
@@ -124,6 +138,70 @@ async def read_content(
     return ContentResponse(**result)
 
 
+# ─── 短链接索引页 ───────────────────────────────────
+
+_INDEX_STYLE = """
+<style>
+  body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }
+  .msg { padding: 12px; border-radius: 4px; margin-bottom: 16px; }
+  .msg.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+  .card { display: block; border: 1px solid #ddd; border-radius: 8px; padding: 18px 20px; margin-bottom: 12px; text-decoration: none; color: inherit; background: #fafafa; transition: background 0.15s; }
+  .card:hover { background: #e9ecef; }
+  .card-title { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
+  .card-desc { font-size: 13px; color: #666; }
+"""
+
+
+@router.get("/pages", response_class=HTMLResponse, summary="短链接索引页（浏览器访问）")
+async def pages_index(
+    token: str | None = Query(None),
+):
+    """所有页面入口的索引页。需要 token 验证。"""
+    # Token 验证
+    if settings.api_token:
+        if not token or not secrets.compare_digest(token, settings.api_token):
+            return HTMLResponse(
+                content=f"""<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><title>导航</title>
+{_INDEX_STYLE}</head>
+<body><h2>📑 导航</h2>
+<div class="msg error">❌ 需要有效的访问口令</div>
+<form method="get" action="/api/v1/novels/pages">
+<input type="text" name="token" placeholder="请输入访问口令" style="width:100%;padding:8px;box-sizing:border-box;">
+<button type="submit" style="margin-top:12px;padding:10px 24px;background:#007acc;color:#fff;border:none;border-radius:4px;cursor:pointer;">验证</button>
+</form></body></html>""",
+                status_code=403,
+            )
+
+    t = quote(token, safe="")
+    pages = [
+        ("📤 文件上传", "上传本地文件到服务器，支持分片上传", f"/api/v1/novels/upload?token={t}"),
+        ("📥 远程下载", "从 URL 拉取文件到服务器", f"/api/v1/novels/download?token={t}"),
+        ("📁 文件管理", "浏览、下载、删除服务器上的文件", f"/api/v1/novels/files?token={t}"),
+    ]
+
+    cards_html = ""
+    for title, desc, href in pages:
+        cards_html += f"""<a class="card" href="{href}">
+<div class="card-title">{html_mod.escape(title)}</div>
+<div class="card-desc">{html_mod.escape(desc)}</div>
+</a>"""
+
+    html = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>导航</title>
+{_INDEX_STYLE}
+</head>
+<body>
+<h2>📑 导航</h2>
+{cards_html}
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
+
 # ─── 上传页面 ───────────────────────────────────────
 
 @router.get("/upload", response_class=HTMLResponse, summary="上传页面（浏览器访问）")
@@ -131,6 +209,7 @@ async def upload_page(
     success: str | None = None,
     error: str | None = None,
     filename: str | None = None,
+    token: str | None = None,
 ):
     """简易文件上传页面（浏览器访问用），支持分片上传。"""
     msg_html = ""
@@ -140,6 +219,7 @@ async def upload_page(
         msg_html = f'<div class="msg error">❌ {html_mod.escape(error)}</div>'
 
     chunk_size = settings.upload_chunk_size_kb * 1024
+    back_html = _back_to_index_html(token)
 
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -167,6 +247,7 @@ async def upload_page(
 </style>
 </head>
 <body>
+{back_html}
 <h2>📤 文件上传</h2>
 {msg_html}
 <form id="uploadForm">
@@ -221,7 +302,6 @@ async def upload_page(
     status.innerHTML = '正在初始化...';
 
     try {{
-      // 1. 初始化
       const initData = new FormData();
       initData.append('filename', f.name);
       initData.append('total_size', f.size);
@@ -237,7 +317,6 @@ async def upload_page(
       const uploadId = init.upload_id;
       const uploaded = new Set(init.uploaded_chunks || []);
 
-      // 2. 上传分片
       let done = uploaded.size;
       progressFill.style.width = (done / totalChunks * 100) + '%';
       progressText.textContent = done + ' / ' + totalChunks + ' 片已完成';
@@ -264,7 +343,6 @@ async def upload_page(
         progressText.textContent = done + ' / ' + totalChunks + ' 片已完成';
       }}
 
-      // 3. 合并
       status.innerHTML = '正在合并文件...';
       const completeData = new FormData();
       completeData.append('upload_id', uploadId);
@@ -276,7 +354,6 @@ async def upload_page(
         throw new Error(err.detail || '合并失败');
       }}
 
-      // 成功 → 跳转回页面
       const result = await completeResp.json();
       window.location.href = '/api/v1/novels/upload?success=' + encodeURIComponent(result.filename);
     }} catch (err) {{
@@ -305,18 +382,15 @@ async def upload_file(
     如果配置了 API_TOKEN，需在表单中传入一致的 token。
     浏览器上传成功后自动重定向回上传页面并显示结果。
     """
-    # 判断是否为浏览器请求
     accept = request.headers.get("accept", "") if request else ""
     is_browser = "text/html" in accept
 
-    # 开关检查
     if not settings.upload_enabled:
         err_msg = "上传功能未启用（UPLOAD_ENABLED=false）"
         if is_browser:
             return RedirectResponse(url=f"/api/v1/novels/upload?error={quote(err_msg)}", status_code=303)
         raise HTTPException(status_code=403, detail=err_msg)
 
-    # Token 验证（配置为空字符串则跳过）
     if settings.api_token:
         if not token or not secrets.compare_digest(token, settings.api_token):
             err_msg = "无效的访问口令"
@@ -330,18 +404,15 @@ async def upload_file(
             return RedirectResponse(url=f"/api/v1/novels/upload?error={quote(err_msg)}", status_code=303)
         raise HTTPException(status_code=400, detail=err_msg)
 
-    # 安全处理文件名
     safe_name = os.path.basename(file.filename)
     safe_name = download_service._ensure_allowed_extension(safe_name)
 
-    # 防同名覆盖
     novels_dir = settings.text_files_dir
     novels_dir.mkdir(parents=True, exist_ok=True)
     save_path, renamed = await download_service._generate_unique_filename(
         novels_dir, safe_name
     )
 
-    # 流式写入 + 大小限制
     max_size = settings.max_file_size_mb * 1024 * 1024
     file_size = 0
     try:
@@ -364,14 +435,12 @@ async def upload_file(
             return RedirectResponse(url=f"/api/v1/novels/upload?error={quote(err_msg)}", status_code=303)
         raise HTTPException(status_code=500, detail=err_msg)
 
-    # 浏览器请求 → 重定向回上传页面显示成功
     if is_browser:
         return RedirectResponse(
             url=f"/api/v1/novels/upload?success={quote(save_path.name)}",
             status_code=303,
         )
 
-    # API 请求 → 返回 JSON
     return UploadResponse(
         filename=save_path.name,
         save_path=str(save_path),
@@ -492,20 +561,16 @@ async def upload_complete(
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     total_chunks = meta["total_chunks"]
 
-    # 检查分片是否齐全
     missing = [i for i in range(total_chunks) if not (upload_dir / f"chunk_{i}").exists()]
     if missing:
         raise HTTPException(status_code=400, detail=f"分片不完整，缺少: {missing}")
 
-    # 安全处理文件名
     safe_name = download_service._ensure_allowed_extension(meta["filename"])
 
-    # 防同名覆盖
     novels_dir = settings.text_files_dir
     novels_dir.mkdir(parents=True, exist_ok=True)
     save_path, renamed = await download_service._generate_unique_filename(novels_dir, safe_name)
 
-    # 按顺序拼接分片
     try:
         async with aiofiles.open(save_path, "wb") as out:
             for i in range(total_chunks):
@@ -519,7 +584,6 @@ async def upload_complete(
 
     file_size = save_path.stat().st_size
 
-    # 清理临时目录
     shutil.rmtree(upload_dir, ignore_errors=True)
 
     return UploadResponse(
@@ -558,7 +622,6 @@ async def files_page(
     error: str | None = None,
 ):
     """文件管理页面：分页浏览、下载、删除服务器上的文件。需要 token 验证。"""
-    # Token 验证
     if settings.api_token:
         if not token or not secrets.compare_digest(token, settings.api_token):
             return HTMLResponse(
@@ -591,7 +654,6 @@ async def files_page(
     elif error:
         msg_html = f'<div class="msg error">❌ {html_mod.escape(error)}</div>'
 
-    # 构建文件列表 HTML
     rows_html = ""
     if not files:
         rows_html = '<tr><td colspan="4" style="text-align:center;padding:24px;color:#666;">暂无文件</td></tr>'
@@ -613,7 +675,6 @@ async def files_page(
 </td>
 </tr>"""
 
-    # 分页控件
     pagination_html = ""
     if total_pages > 1:
         pagination_html = '<div class="pagination">'
@@ -625,6 +686,8 @@ async def files_page(
         pagination_html += '</div>'
     elif total > 0:
         pagination_html = f'<div class="pagination"><span>共 {total} 个文件</span></div>'
+
+    back_html = _back_to_index_html(token)
 
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -652,6 +715,7 @@ async def files_page(
 </style>
 </head>
 <body>
+{back_html}
 <h2>📁 文件管理</h2>
 {msg_html}
 <table>
@@ -685,14 +749,12 @@ async def delete_file(
     accept = request.headers.get("accept", "") if request else "" if request else ""
     is_browser = "text/html" in accept
 
-    # 开关检查
     if not settings.file_download_enabled:
         err_msg = "文件下载功能未启用（FILE_DOWNLOAD_ENABLED=false）"
         if is_browser:
             return RedirectResponse(url=f"/api/v1/novels/files?token={quote(token or '', safe='')}&error={quote(err_msg)}", status_code=303)
         raise HTTPException(status_code=403, detail=err_msg)
 
-    # Token 验证
     if settings.api_token:
         if not token or not secrets.compare_digest(token, settings.api_token):
             err_msg = "无效的访问口令"
@@ -700,7 +762,6 @@ async def delete_file(
                 return RedirectResponse(url=f"/api/v1/novels/files?token={quote(token or '', safe='')}&error={quote(err_msg)}", status_code=303)
             raise HTTPException(status_code=403, detail=err_msg)
 
-    # 安全路径校验
     try:
         file_path = file_service._safe_path(filename)
     except ValueError as e:
@@ -744,6 +805,7 @@ async def delete_file(
 async def download_page(
     success: str | None = None,
     error: str | None = None,
+    token: str | None = None,
 ):
     """简易远程下载页面（浏览器访问用）。"""
     msg_html = ""
@@ -751,6 +813,8 @@ async def download_page(
         msg_html = f'<div class="msg success">✅ 下载成功: {html_mod.escape(success)}</div>'
     elif error:
         msg_html = f'<div class="msg error">❌ {html_mod.escape(error)}</div>'
+
+    back_html = _back_to_index_html(token)
 
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -771,6 +835,7 @@ async def download_page(
 </style>
 </head>
 <body>
+{back_html}
 <h2>📥 远程下载</h2>
 {msg_html}
 <form action="/api/v1/novels/download" method="post">
@@ -801,23 +866,19 @@ async def download_novel(
     如果配置了 API_TOKEN，需传入一致的 token。
     浏览器下载成功后自动重定向回下载页面并显示结果。
     """
-    # 判断是否为浏览器请求
     accept = request.headers.get("accept", "") if request else ""
     is_browser = "text/html" in accept
 
-    # 兼容 JSON 请求体和表单提交
     if url is None and body is not None:
         url = body.url
         token = token or body.token
 
-    # 开关检查
     if not settings.remote_download_enabled:
         err_msg = "远程下载功能未启用（REMOTE_DOWNLOAD_ENABLED=false）"
         if is_browser:
             return RedirectResponse(url=f"/api/v1/novels/download?error={quote(err_msg)}", status_code=303)
         raise HTTPException(status_code=403, detail=err_msg)
 
-    # Token 验证（配置为空字符串则跳过）
     if settings.api_token:
         if not token or not secrets.compare_digest(token, settings.api_token):
             err_msg = "无效的访问口令"
@@ -852,14 +913,12 @@ async def download_novel(
             return RedirectResponse(url=f"/api/v1/novels/download?error={quote(err_msg)}", status_code=303)
         raise HTTPException(status_code=500, detail=err_msg)
 
-    # 浏览器请求 → 重定向回下载页面显示成功
     if is_browser:
         return RedirectResponse(
             url=f"/api/v1/novels/download?success={quote(result['filename'])}",
             status_code=303,
         )
 
-    # API 请求 → 返回 JSON
     return DownloadResponse(**result)
 
 
@@ -875,14 +934,12 @@ async def download_file(
     需要配置 FILE_DOWNLOAD_ENABLED=true 开启此接口。
     如果配置了 API_TOKEN，需在查询参数中传入一致的 token。
     """
-    # 开关检查
     if not settings.file_download_enabled:
         raise HTTPException(
             status_code=403,
             detail="文件下载未启用（FILE_DOWNLOAD_ENABLED=false）",
         )
 
-    # Token 验证（配置为空字符串则跳过）
     if settings.api_token:
         if not token or not secrets.compare_digest(token, settings.api_token):
             raise HTTPException(
@@ -890,7 +947,6 @@ async def download_file(
                 detail="无效的访问口令",
             )
 
-    # 安全路径校验
     try:
         file_path = file_service._safe_path(filename)
     except ValueError as e:
