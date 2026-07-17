@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     remote_download_enabled: bool = False
     remote_download_allow_intranet: bool = False
     upload_enabled: bool = False
+    upload_chunk_size_kb: int = 512
     file_download_enabled: bool = False
 
     @property
