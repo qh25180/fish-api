@@ -107,12 +107,25 @@ def _estimate_chapters_from_head(file_path: Path) -> int:
 
 # ─── Cache（LRU 缓存，避免同一文件反复读取+解析）───────────────
 
+# 单个文件最大读取字节数（100 MB），防止 OOM
+MAX_FILE_READ_SIZE = 100 * 1024 * 1024
+
+
+MAX_FILE_READ_SIZE = 100 * 1024 * 1024  # 100 MB，防止大文件 OOM
+
+
 @lru_cache(maxsize=16)
 def _read_and_parse_cached(file_path_str: str) -> tuple[str, tuple]:
     """读取文件全文并解析章节，结果由 LRU 缓存。
 
     返回 (text, chapters_tuple)，chapters_tuple 不可变以便缓存。
     """
+    file_size = Path(file_path_str).stat().st_size
+    if file_size > MAX_FILE_READ_SIZE:
+        raise ValueError(
+            f"文件过大（{file_size / 1024 / 1024:.0f}MB），"
+            f"超过限制 {MAX_FILE_READ_SIZE / 1024 / 1024}MB"
+        )
     text = read_file_with_encoding(file_path_str)
     chapters = _parse_chapters(text)
     return text, tuple(chapters)

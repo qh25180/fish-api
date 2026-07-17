@@ -66,3 +66,11 @@ class DownloadResponse(BaseModel):
     save_path: str
     file_size: int
     renamed: bool
+
+
+class UploadResponse(BaseModel):
+    """Response for file upload operation."""
+    filename: str
+    save_path: str
+    file_size: int
+    renamed: bool

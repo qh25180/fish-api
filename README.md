@@ -66,6 +66,7 @@ cp .env.example .env
 | `DOWNLOAD_ENABLED` | `false` | 是否启用远程下载接口 |
 | `DOWNLOAD_TOKEN` | `qhapi-token` | 下载访问口令（留空则不验证） |
 | `DOWNLOAD_ALLOW_INTRANET` | `false` | 允许下载内网地址的文件 |
+| `UPLOAD_ENABLED` | `false` | 是否启用文件上传接口 |
 | `MAX_FILE_SIZE_MB` | `50` | 下载文件大小上限（MB） |
 | `DOWNLOAD_TIMEOUT_SECONDS` | `30` | 下载超时时间（秒） |
 
@@ -94,9 +95,11 @@ venv/bin/uvicorn main:app --reload --host 0.0.0.0 --port 8000
 | `GET` | `/api/v1/novels/{filename}/chapters/{chapter_number}` | 按章节获取内容（支持章节内偏移） |
 | `GET` | `/api/v1/novels/{filename}/content` | 按全局偏移获取内容（支持按章节定位） |
 | `POST` | `/api/v1/novels/download` | 从 URL 下载文件（需开启 + token 验证） |
+| `POST` | `/api/v1/novels/upload` | 上传本地文件（需开启 + token 验证） |
+| `GET` | `/api/v1/novels/upload` | 浏览器访问的上传页面 |
 | `GET` | `/health` | 健康检查 |
 
-> **下载接口说明**：需在 `.env` 中设置 `DOWNLOAD_ENABLED=true` 开启。如果配置了 `DOWNLOAD_TOKEN`，请求体中需携带匹配的 `token` 字段（未配置或为空则跳过验证）。默认令牌首次启动时会自动生成并输出到控制台。
+> **下载/上传接口说明**：需在 `.env` 中设置 `DOWNLOAD_ENABLED=true` 开启。如果配置了 `DOWNLOAD_TOKEN`，请求体/表单中需携带匹配的 `token` 字段（未配置或为空则跳过验证）。默认令牌首次启动时会自动生成并输出到控制台。
 
 ### 定位方式一览
 
@@ -157,6 +160,20 @@ curl -X POST http://localhost:8000/api/v1/novels/download \
   -H "Content-Type: application/json" \
   -d '{"url":"https://example.com/file.txt","token":"你的口令"}'
 ```
+
+**上传本地文件：**
+```bash
+# 未配口令时
+curl -X POST http://localhost:8000/api/v1/novels/upload \
+  -F "file=@/path/to/local/file.txt"
+
+# 有口令时需传入 token
+curl -X POST http://localhost:8000/api/v1/novels/upload \
+  -F "file=@/path/to/local/file.txt" \
+  -F "token=你的口令"
+```
+
+浏览器上传：访问 `http://<服务器IP>:8000/api/v1/novels/upload-page` 打开可视化上传页面。
 
 ## 功能特性
 

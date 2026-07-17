@@ -1,6 +1,11 @@
 ﻿"""Novel API routes."""
 
-from fastapi import APIRouter, HTTPException, Query
+import os
+import secrets
+
+import aiofiles
+from fastapi import APIRouter, HTTPException, Query, File, UploadFile, Form
+from fastapi.responses import HTMLResponse
 
 from app.models import (
     NovelListResponse,
@@ -8,6 +13,7 @@ from app.models import (
     ChapterListResponse,
     DownloadRequest,
     DownloadResponse,
+    UploadResponse,
 )
 from app.config import settings
 from app.services import file_service, download_service
@@ -110,6 +116,110 @@ async def read_content(
     return ContentResponse(**result)
 
 
+# ─── 上传页面 ───────────────────────────────────────
+
+@router.get("/upload", response_class=HTMLResponse, include_in_schema=False)
+async def upload_page():
+    """简易文件上传页面（浏览器访问用）。"""
+    html = """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>文件上传</title>
+<style>
+  body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }
+  form { border: 1px solid #ddd; padding: 24px; border-radius: 8px; background: #fafafa; }
+  label { display: block; margin: 12px 0 4px; font-weight: bold; }
+  input[type=file], input[type=text] { width: 100%; padding: 8px; box-sizing: border-box; }
+  button { margin-top: 16px; padding: 10px 24px; background: #007acc; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+  button:hover { background: #005999; }
+  .tip { color: #666; font-size: 14px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<h2>📤 文件上传</h2>
+<form action="/api/v1/novels/upload" method="post" enctype="multipart/form-data">
+  <label for="file">选择文件</label>
+  <input type="file" name="file" id="file" required>
+  <label for="token">访问口令</label>
+  <input type="text" name="token" id="token" placeholder="如需口令请在此输入">
+  <button type="submit">上传</button>
+  <div class="tip">支持的文件类型: """ + ", ".join(settings.text_file_extensions_list) + """</div>
+</form>
+</body>
+</html>"""
+    return html
+
+
+# ─── 文件上传 ───────────────────────────────────────
+
+@router.post("/upload", response_model=UploadResponse)
+async def upload_file(
+    file: UploadFile = File(...),
+    token: str | None = Form(None),
+):
+    """上传本地文件到服务器配置目录。
+
+    需要配置 UPLOAD_ENABLED=true 开启此接口。
+    如果配置了 DOWNLOAD_TOKEN，需在表单中传入一致的 token。
+    """
+    # 开关检查
+    if not settings.upload_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="上传功能未启用（UPLOAD_ENABLED=false）",
+        )
+
+    # Token 验证（配置为空字符串则跳过）
+    if settings.download_token:
+        if not token or not secrets.compare_digest(token, settings.download_token):
+            raise HTTPException(
+                status_code=403,
+                detail="无效的访问口令",
+            )
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="未选择文件")
+
+    # 安全处理文件名
+    safe_name = os.path.basename(file.filename)
+    safe_name = download_service._ensure_allowed_extension(safe_name)
+
+    # 防同名覆盖
+    novels_dir = settings.text_files_dir
+    novels_dir.mkdir(parents=True, exist_ok=True)
+    save_path, renamed = await download_service._generate_unique_filename(
+        novels_dir, safe_name
+    )
+
+    # 流式写入 + 大小限制
+    max_size = settings.max_file_size_mb * 1024 * 1024
+    file_size = 0
+    try:
+        async with aiofiles.open(save_path, "wb") as f:
+            while chunk := await file.read(65536):
+                file_size += len(chunk)
+                if file_size > max_size:
+                    await f.close()
+                    save_path.unlink(missing_ok=True)
+                    raise ValueError(
+                        f"文件超过大小限制 {settings.max_file_size_mb}MB"
+                    )
+                await f.write(chunk)
+    except ValueError:
+        raise
+    except Exception as e:
+        save_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"文件写入失败: {e}")
+
+    return UploadResponse(
+        filename=save_path.name,
+        save_path=str(save_path),
+        file_size=file_size,
+        renamed=renamed,
+    )
+
+
 @router.post("/download", response_model=DownloadResponse)
 async def download_novel(request: DownloadRequest):
     """从 URL 下载文件到配置目录（自动防同名覆盖）。
@@ -127,7 +237,7 @@ async def download_novel(request: DownloadRequest):
     # Token 验证（配置为空字符串则跳过）
     if settings.download_token:
         token = request.token or ""
-        if token != settings.download_token:
+        if not secrets.compare_digest(token, settings.download_token):
             raise HTTPException(
                 status_code=403,
                 detail="无效的访问口令",

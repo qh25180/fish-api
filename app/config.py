@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     download_token: str = "qhapi-token"
     download_enabled: bool = False
     download_allow_intranet: bool = False
+    upload_enabled: bool = False
 
     @property
     def text_file_extensions_list(self) -> List[str]:
