@@ -1,5 +1,6 @@
-﻿"""Novel API routes."""
+"""Novel API routes."""
 
+import html as html_mod
 import os
 import secrets
 
@@ -128,9 +129,9 @@ async def upload_page(
     """简易文件上传页面（浏览器访问用）。"""
     msg_html = ""
     if success:
-        msg_html = f'<div class="msg success">✅ 上传成功: {success}</div>'
+        msg_html = f'<div class="msg success">✅ 上传成功: {html_mod.escape(success)}</div>'
     elif error:
-        msg_html = f'<div class="msg error">❌ {error}</div>'
+        msg_html = f'<div class="msg error">❌ {html_mod.escape(error)}</div>'
 
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -255,43 +256,128 @@ async def upload_file(
     )
 
 
+# ─── 远程下载页面 ───────────────────────────────────
+
+@router.get("/download", response_class=HTMLResponse, summary="远程下载页面（浏览器访问）")
+async def download_page(
+    success: str | None = None,
+    error: str | None = None,
+):
+    """简易远程下载页面（浏览器访问用）。"""
+    msg_html = ""
+    if success:
+        msg_html = f'<div class="msg success">✅ 下载成功: {html_mod.escape(success)}</div>'
+    elif error:
+        msg_html = f'<div class="msg error">❌ {html_mod.escape(error)}</div>'
+
+    html = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>远程下载</title>
+<style>
+  body {{ font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }}
+  form {{ border: 1px solid #ddd; padding: 24px; border-radius: 8px; background: #fafafa; }}
+  label {{ display: block; margin: 12px 0 4px; font-weight: bold; }}
+  input[type=text] {{ width: 100%; padding: 8px; box-sizing: border-box; }}
+  button {{ margin-top: 16px; padding: 10px 24px; background: #007acc; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }}
+  button:hover {{ background: #005999; }}
+  .tip {{ color: #666; font-size: 14px; margin-top: 8px; }}
+  .msg {{ padding: 12px; border-radius: 4px; margin-bottom: 16px; }}
+  .msg.success {{ background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }}
+  .msg.error {{ background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }}
+</style>
+</head>
+<body>
+<h2>📥 远程下载</h2>
+{msg_html}
+<form action="/api/v1/novels/download" method="post">
+  <label for="url">下载链接</label>
+  <input type="text" name="url" id="url" placeholder="https://example.com/file.txt" required>
+  <label for="token">访问口令</label>
+  <input type="text" name="token" id="token" placeholder="如需口令请在此输入">
+  <button type="submit">下载</button>
+  <div class="tip">支持 http:// 和 https:// 协议的 URL</div>
+</form>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
+
+# ─── 远程下载 ───────────────────────────────────────
+
 @router.post("/download", response_model=DownloadResponse)
-async def download_novel(request: DownloadRequest):
+async def download_novel(
+    url: str | None = Form(None),
+    token: str | None = Form(None),
+    request: Request = None,
+    body: DownloadRequest | None = None,
+):
     """从 URL 下载文件到配置目录（自动防同名覆盖）。
 
     需要配置 REMOTE_DOWNLOAD_ENABLED=true 开启此接口。
-    如果配置了 API_TOKEN，需在请求体中传入一致的 token。
+    如果配置了 API_TOKEN，需传入一致的 token。
+    浏览器下载成功后自动重定向回下载页面并显示结果。
     """
+    # 判断是否为浏览器请求
+    accept = request.headers.get("accept", "") if request else ""
+    is_browser = "text/html" in accept
+
+    # 兼容 JSON 请求体和表单提交
+    if url is None and body is not None:
+        url = body.url
+        token = token or body.token
+
     # 开关检查
     if not settings.remote_download_enabled:
-        raise HTTPException(
-            status_code=403,
-            detail="远程下载功能未启用（REMOTE_DOWNLOAD_ENABLED=false）",
-        )
+        err_msg = "远程下载功能未启用（REMOTE_DOWNLOAD_ENABLED=false）"
+        if is_browser:
+            return RedirectResponse(url=f"/api/v1/novels/download?error={quote(err_msg)}", status_code=303)
+        raise HTTPException(status_code=403, detail=err_msg)
 
     # Token 验证（配置为空字符串则跳过）
     if settings.api_token:
-        token = request.token or ""
-        if not secrets.compare_digest(token, settings.api_token):
-            raise HTTPException(
-                status_code=403,
-                detail="无效的访问口令",
-            )
+        if not token or not secrets.compare_digest(token, settings.api_token):
+            err_msg = "无效的访问口令"
+            if is_browser:
+                return RedirectResponse(url=f"/api/v1/novels/download?error={quote(err_msg)}", status_code=303)
+            raise HTTPException(status_code=403, detail=err_msg)
 
-    url = request.url.strip()
+    if not url:
+        err_msg = "请输入下载链接"
+        if is_browser:
+            return RedirectResponse(url=f"/api/v1/novels/download?error={quote(err_msg)}", status_code=303)
+        raise HTTPException(status_code=400, detail=err_msg)
+
+    url = url.strip()
 
     if not url.startswith(("http://", "https://")):
-        raise HTTPException(
-            status_code=400, detail="仅支持 http:// 和 https:// 协议的 URL"
-        )
+        err_msg = "仅支持 http:// 和 https:// 协议的 URL"
+        if is_browser:
+            return RedirectResponse(url=f"/api/v1/novels/download?error={quote(err_msg)}", status_code=303)
+        raise HTTPException(status_code=400, detail=err_msg)
 
     try:
         result = await download_service.download_novel(url)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        err_msg = str(e)
+        if is_browser:
+            return RedirectResponse(url=f"/api/v1/novels/download?error={quote(err_msg)}", status_code=303)
+        raise HTTPException(status_code=400, detail=err_msg)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        err_msg = str(e)
+        if is_browser:
+            return RedirectResponse(url=f"/api/v1/novels/download?error={quote(err_msg)}", status_code=303)
+        raise HTTPException(status_code=500, detail=err_msg)
 
+    # 浏览器请求 → 重定向回下载页面显示成功
+    if is_browser:
+        return RedirectResponse(
+            url=f"/api/v1/novels/download?success={quote(result['filename'])}",
+            status_code=303,
+        )
+
+    # API 请求 → 返回 JSON
     return DownloadResponse(**result)
 
 

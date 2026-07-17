@@ -1,4 +1,4 @@
-﻿# QHAPI — 阅读 API
+# QHAPI — 阅读 API
 
 <p>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
@@ -134,6 +134,7 @@ http://<服务器IP>:8000/docs?token=你的API_TOKEN
 | `POST` | `/api/v1/novels/download` | 远程拉取 URL 文件（需 REMOTE_DOWNLOAD_ENABLED=true） |
 | `POST` | `/api/v1/novels/upload` | 上传本地文件（需 UPLOAD_ENABLED=true） |
 | `GET` | `/api/v1/novels/upload` | 浏览器访问的上传页面 |
+| `GET` | `/api/v1/novels/download` | 浏览器访问的远程下载页面 |
 | `GET` | `/api/v1/novels/{filename}/download` | 下载服务器文件（需 FILE_DOWNLOAD_ENABLED=true） |
 | `GET` | `/health` | 健康检查 |
 
@@ -214,6 +215,24 @@ curl -X POST http://localhost:8000/api/v1/novels/upload \
 ```
 
 浏览器上传：访问 `http://<服务器IP>:8000/api/v1/novels/upload` 打开可视化上传页面。
+
+**远程拉取文件到服务器（需开启 REMOTE_DOWNLOAD_ENABLED=true）：**
+```bash
+# 浏览器访问
+# http://<服务器IP>:8000/api/v1/novels/download
+
+# 未配口令时
+curl -X POST http://localhost:8000/api/v1/novels/download \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/file.txt"}'
+
+# 有口令时需传入 token
+curl -X POST http://localhost:8000/api/v1/novels/download \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/file.txt","token":"你的口令"}'
+```
+
+浏览器远程下载：访问 `http://<服务器IP>:8000/api/v1/novels/download` 打开可视化下载页面。
 
 **下载服务器文件到本地（需开启 FILE_DOWNLOAD_ENABLED=true）：**
 ```bash
