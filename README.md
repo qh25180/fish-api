@@ -76,12 +76,22 @@ venv/bin/uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 | 方法 | 路径 | 功能 |
 |------|------|------|
-| `GET` | `/api/v1/novels` | 列出所有文本文件（支持分页和扩展名过滤） |
+| `GET` | `/api/v1/novels` | 列出所有文本文件（分页 + 扩展名过滤） |
 | `GET` | `/api/v1/novels/{filename}/chapters` | 获取文件的章节列表 |
-| `GET` | `/api/v1/novels/{filename}/chapters/{chapter_number}` | 获取指定章节的完整内容（自动从章首到下一章开头） |
-| `GET` | `/api/v1/novels/{filename}/content` | 读取文本内容（支持字符偏移或章节定位） |
-| `POST` | `/api/v1/novels/download` | 从 URL 下载小说文件（自动防同名覆盖） |
+| `GET` | `/api/v1/novels/{filename}/chapters/{chapter_number}` | 按章节获取内容（支持章节内偏移） |
+| `GET` | `/api/v1/novels/{filename}/content` | 按全局偏移获取内容（支持按章节定位） |
+| `POST` | `/api/v1/novels/download` | 从 URL 下载文件（自动防同名覆盖） |
 | `GET` | `/health` | 健康检查 |
+
+### 定位方式一览
+
+| 方式 | 路径 | 参数示例 | 说明 |
+|------|------|----------|------|
+| 整书偏移 | `/content` | `?start=500&offset=200` | 从文件第 500 字起取 200 字 |
+| 章节开头 | `/chapters/2` | （无参数） | 返回第 2 章全文 |
+| 章节+偏移 | `/chapters/2` | `?start=100&offset=200` | 从第 2 章第 100 字起取 200 字 |
+| 章节+长度 | `/content` | `?chapter=2&offset=300` | 从第 2 章开头起取 300 字 |
+| 章节内偏移 | `/content` | `?chapter=2&start=100&offset=200` | 从第 2 章第 100 字起取 200 字 |
 
 ### 接口示例
 
@@ -90,9 +100,24 @@ venv/bin/uvicorn main:app --reload --host 0.0.0.0 --port 8000
 curl http://localhost:8000/api/v1/novels
 ```
 
-**按章节列表：**
+**章节列表：**
 ```bash
 curl "http://localhost:8000/api/v1/novels/穿越之江南烟雨.txt/chapters"
+```
+
+**从整书第 500 字起取 200 字：**
+```bash
+curl "http://localhost:8000/api/v1/novels/穿越之江南烟雨.txt/content?start=500&offset=200"
+```
+
+**从第 2 章开头起取 200 字：**
+```bash
+curl "http://localhost:8000/api/v1/novels/穿越之江南烟雨.txt/content?chapter=2&offset=200"
+```
+
+**从第 2 章第 100 字起取 200 字：**
+```bash
+curl "http://localhost:8000/api/v1/novels/穿越之江南烟雨.txt/content?chapter=2&start=100&offset=200"
 ```
 
 **获取第 2 章完整内容：**
@@ -100,14 +125,9 @@ curl "http://localhost:8000/api/v1/novels/穿越之江南烟雨.txt/chapters"
 curl "http://localhost:8000/api/v1/novels/穿越之江南烟雨.txt/chapters/2"
 ```
 
-**获取第 2 章前 100 字：**
+**从第 2 章第 50 字起取 100 字（独立接口）：**
 ```bash
-curl "http://localhost:8000/api/v1/novels/穿越之江南烟雨.txt/chapters/2?offset=100"
-```
-
-**按偏移读取内容（传统方式）：**
-```bash
-curl "http://localhost:8000/api/v1/novels/穿越之江南烟雨.txt/content?start=0&offset=300"
+curl "http://localhost:8000/api/v1/novels/穿越之江南烟雨.txt/chapters/2?start=50&offset=100"
 ```
 
 **下载文件：**
