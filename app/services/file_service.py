@@ -2,11 +2,12 @@
 
 import os
 import re
+import datetime
 from pathlib import Path
 from typing import Optional
 
 from app.config import settings
-from app.utils.encoding import read_file_with_encoding
+from app.utils.encoding import read_file_with_encoding, detect_encoding
 from app.models import NovelInfo, ChapterInfo
 
 # ─── Chapter Detection Patterns (ordered by priority) ─────────
@@ -91,6 +92,18 @@ def _parse_chapters(text: str) -> list[ChapterInfo]:
     return chapters
 
 
+def _estimate_chapters_from_head(file_path: Path) -> int:
+    """仅读取文件前 64KB 估算章节数，避免大文件全文读取。"""
+    try:
+        with open(file_path, "rb") as f:
+            raw = f.read(65536)
+        detected = detect_encoding(str(file_path))
+        text = raw.decode(detected, errors="replace")
+        return _estimate_chapters(text)
+    except Exception:
+        return 1
+
+
 # ─── Public API ───────────────────────────────────────────────
 
 def list_novel_files(
@@ -123,15 +136,10 @@ def list_novel_files(
             if file_ext not in allowed_exts:
                 continue
 
-        # Estimate chapters
-        try:
-            text = read_file_with_encoding(str(f))
-            est_chapters = _estimate_chapters(text)
-        except Exception:
-            est_chapters = 0
+        # Estimate chapters（仅读文件头 64KB 以提升性能）
+        est_chapters = _estimate_chapters_from_head(f)
 
         stat = f.stat()
-        import datetime
         files.append(NovelInfo(
             filename=f.name,
             file_size=stat.st_size,
