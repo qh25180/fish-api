@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import novels
+from app.routers import novels, legado
 
 app = FastAPI(
     title="QHAPI - QH API",
@@ -12,17 +12,17 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS — 允许所有来源（开发阶段）
+# CORS — 开放所有来源（局域网使用）
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # 注册路由
 app.include_router(novels.router)
+app.include_router(legado.router)
 
 
 @app.get("/", tags=["root"])

@@ -1,6 +1,6 @@
-﻿# QHAPI — 小说阅读 API
+﻿# QHAPI — 阅读 API
 
-基于 Python + FastAPI 构建的轻量小说阅读 API 服务，支持小说文件浏览、章节解析、文本内容读取和远程文件下载。
+基于 Python + FastAPI 构建的轻量阅读 API 服务，支持文件浏览、章节解析、文本内容读取和远程文件下载。
 
 ## 技术栈
 
@@ -15,14 +15,17 @@
 ├── app/
 │   ├── config.py              # 配置管理（pydantic-settings）
 │   ├── models.py              # Pydantic 请求/响应模型
+│   ├── legado_models.py       # Legado HTTP API 兼容数据模型
 │   ├── routers/
-│   │   └── novels.py          # API 路由
+│   │   ├── novels.py          # 小说 API 路由
+│   │   └── legado.py          # Legado HTTP API 兼容路由
 │   ├── services/
 │   │   ├── file_service.py    # 文件扫描、章节解析、文本提取
-│   │   └── download_service.py# URL 下载、防同名覆盖
+│   │   ├── download_service.py# URL 下载、防同名覆盖
+│   │   └── legado_service.py  # Legado 数据映射服务
 │   └── utils/
 │       └── encoding.py        # chardet 编码检测封装
-├── novels/                    # 小说文件存放目录
+├── novels/                    # 文本文件存放目录
 ├── main.py                    # 应用入口
 ├── requirements.txt           # Python 依赖
 ├── .env.example               # 配置模板
@@ -50,15 +53,15 @@ cp .env.example .env
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `TEXT_FILES_DIR` | `./novels` | 小说文件存放目录 |
+| `TEXT_FILES_DIR` | `./novels` |文本文件存放目录 |
 | `TEXT_FILE_EXTENSIONS` | `.txt,.md` | 允许的文件扩展名 |
 | `DEFAULT_ENCODING` | `auto` | 默认编码（auto 表示自动检测） |
 | `MAX_FILE_SIZE_MB` | `50` | 下载文件大小上限（MB） |
 | `DOWNLOAD_TIMEOUT_SECONDS` | `30` | 下载超时时间（秒） |
 
-### 3. 放入小说文件
+### 3. 放入文本文件
 
-将 `.txt` 或 `.md` 格式的小说文件放入 `novels/` 目录。
+将 `.txt` 或 `.md` 格式的文本文件放入 `novels/` 目录。
 
 ### 4. 启动服务
 
@@ -144,3 +147,45 @@ curl -X POST http://localhost:8000/api/v1/novels/download \
 - **路径穿越防护**：所有文件访问均做路径校验，确保安全
 - **防同名覆盖**：下载文件时若文件名已存在，自动追加 `(1)`、`(2)` 等序号
 - **下载大小限制**：通过配置限制单个下载文件的大小，防止资源滥用
+
+---
+
+## 🔌 Legado HTTP API 兼容
+
+本服务原生兼容 **Legado「阅读」App Web 服务协议**，可与 `yuedu_vscode_dicarbene` 等 VS Code 插件开箱即用。
+
+### 兼容端点
+
+| 方法 | 路径 | 参数 | 说明 |
+|------|------|------|------|
+| `GET` | `/getBookshelf` | 无 | 获取书架（文件列表） |
+| `GET` | `/getChapterList` | `?url={bookUrl}` | 获取章节目录 |
+| `GET` | `/getBookContent` | `?url={bookUrl}&index={n}` | 获取章节全文 |
+| `POST` | `/saveBookProgress` | JSON Body | 保存阅读进度 |
+
+所有响应均包装在统一格式中：
+```json
+{"isSuccess": true, "errorMsg": "", "data": ...}
+```
+
+### VS Code 插件配置
+
+安装 [yuedu_vscode_dicarbene](https://github.com/Dicarbene/yuedu_vscode_dicarbene) 插件后，设置：
+
+```json
+{
+  "yuedu.httpBase": "http://<服务器IP>:8000/"
+}
+```
+
+即可连接本服务，在 VS Code 状态栏中阅读小说。
+
+### 数据映射说明
+
+| 文件/章节 | → | Legado 模型 |
+|-----------|---|-------------|
+| `novels/三体.txt` | → | 书架上的书（name="三体", bookUrl="三体.txt"）|
+| 文件中的"第一章" | → | 章节（title="第一章", index=0）|
+| 章节全文内容 | → | `getBookContent` 返回纯文本 |
+
+## 项目结构
