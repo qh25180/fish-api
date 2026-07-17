@@ -46,10 +46,23 @@ def _save_progress(data: dict):
 
 # ─── 书架 ───────────────────────────────────────────
 
+def _load_hidden_books() -> set:
+    """读取隐藏书籍列表。"""
+    path = settings.text_files_dir / ".hidden_books.json"
+    if not path.exists():
+        return set()
+    try:
+        return set(json.loads(path.read_text(encoding="utf-8")))
+    except Exception:
+        return set()
+
+
 def get_bookshelf() -> list[LegadoBook]:
-    """获取书架列表（所有文本文件 → LegadoBook 列表）。"""
+    """获取书架列表（所有文本文件 → LegadoBook 列表，排除隐藏书籍）。"""
     files, _ = list_novel_files(page=1, page_size=9999)
-    return [_file_to_legado_book(f.filename, f.estimated_chapters) for f in files]
+    hidden = _load_hidden_books()
+    return [_file_to_legado_book(f.filename, f.estimated_chapters)
+            for f in files if Path(f.filename).stem not in hidden]
 
 
 def _file_to_legado_book(filename: str, total_chapters: int) -> LegadoBook:
