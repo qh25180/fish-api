@@ -57,15 +57,19 @@ async def get_chapters(filename: str):
 async def get_chapter_content(
     filename: str,
     chapter_number: int,
+    start: int = Query(
+        0, ge=0, description="章节内字符偏移起始位置"
+    ),
     offset: int | None = Query(
         None, ge=1, le=50000, description="限制返回字符数，不指定则返回整章"
     ),
 ):
-    """获取指定章节的文本内容（自动从章节头截取到下一章开始）。"""
+    """获取指定章节的文本内容，支持章节内偏移。"""
     try:
         result = file_service.get_chapter_content(
             filename=filename,
             chapter_number=chapter_number,
+            start=start,
             offset=offset,
         )
     except FileNotFoundError as e:
@@ -84,10 +88,10 @@ async def read_content(
     start: int = Query(0, ge=0, description="字符起始位置"),
     offset: int = Query(2000, ge=1, le=50000, description="返回字符数"),
     chapter: int | None = Query(
-        None, ge=1, description="章节号（会覆盖 start 参数）"
+        None, ge=1, description="章节号（与 start 叠加，此时 start 为章节内偏移）"
     ),
 ):
-    """获取指定文件的文本内容，支持按字符偏移或章节号定位。"""
+    """获取指定文件的文本内容，支持按字符偏移或章节内偏移定位。"""
     try:
         result = file_service.get_content(
             filename=filename,

@@ -187,7 +187,7 @@ def get_content(
                 f"章节 {chapter} 不存在，文件共有 {len(chapters)} 章"
             )
         ch = chapters[chapter - 1]
-        effective_start = ch.start_pos
+        effective_start = ch.start_pos + start
         chapter_title = ch.title
 
     # Bounds checking
@@ -215,12 +215,14 @@ def get_content(
 def get_chapter_content(
     filename: str,
     chapter_number: int,
+    start: int = 0,
     offset: int | None = None,
 ) -> dict:
-    """获取指定章节的完整文本内容。
+    """获取指定章节的文本内容，支持章节内偏移。
 
-    自动从章节起始位置截取到下一章开始位置（或文件末尾）。
-    如果指定 offset，则限制返回字符数。
+    从章节起始位置开始截取，到下一章开始位置（或文件末尾）结束。
+    可通过 start 参数指定章节内的字符偏移起始位置。
+    可通过 offset 参数限制返回字符数。
     返回 dict 与 ContentResponse schema 兼容。
     """
     chapters = get_chapters(filename)
@@ -241,18 +243,31 @@ def get_chapter_content(
     else:
         chapter_end = total_length
 
-    chapter_length = chapter_end - ch.start_pos
+    # 有效起始位置 = 章节起始 + 章节内偏移
+    effective_start = ch.start_pos + start
+    chapter_absolute_end = chapter_end
 
-    # 如果指定了 offset，取两者较小值
+    # 边界检查
+    if effective_start < ch.start_pos:
+        effective_start = ch.start_pos
+    if effective_start >= chapter_absolute_end:
+        effective_start = chapter_absolute_end - 1
+    if effective_start < 0:
+        effective_start = 0
+
+    # 计算长度：不指定 offset 则到章节末尾；指定则取较小值
+    available = chapter_absolute_end - effective_start
     if offset is not None:
-        chapter_length = min(chapter_length, offset)
+        length = min(available, offset)
+    else:
+        length = available
 
-    end_pos = ch.start_pos + chapter_length
-    content = text[ch.start_pos:end_pos]
+    end_pos = effective_start + length
+    content = text[effective_start:end_pos]
 
     return {
         "filename": filename,
-        "start": ch.start_pos,
+        "start": effective_start,
         "offset": len(content),
         "total_length": total_length,
         "content": content,
