@@ -1,4 +1,4 @@
-﻿"""QHAPI — Novel Reading API 入口"""
+﻿"""QHAPI — API 入口"""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,9 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routers import novels, legado
 
 app = FastAPI(
-    title="QHAPI - QH API",
-    description="API 服务\n\n"
-    "提供文件列表浏览、内容解析、文本内容读取、远程文件下载等功能。",
+    title="QHAPI",
+    description="QHAPI — 通用 API 服务\n\n"
+    "当前提供文件列表浏览、章节解析、文本内容读取、远程文件下载等功能。",
     version="1.0.0",
 )
 
@@ -29,7 +29,7 @@ app.include_router(legado.router)
 async def root():
     """API 根路径，返回服务信息。"""
     return {
-        "service": "QHAPI Novel Reading API",
+        "service": "QHAPI Service",
         "version": "1.0.0",
         "docs": "/docs",
     }
