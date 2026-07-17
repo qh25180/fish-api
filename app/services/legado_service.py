@@ -1,6 +1,7 @@
 """Legado 映射服务：将 QHAPI 内部数据模型转为 Legado 兼容格式。"""
 
 import json
+import re
 import time
 from pathlib import Path
 
@@ -131,12 +132,23 @@ def save_book_progress(
     _save_progress(progress)
 
 
+def _normalize_text(text: str) -> str:
+    """规范化文本：去除多余空格、标点差异。"""
+    # 去除所有空白字符
+    text = re.sub(r"\s+", "", text)
+    # 统一标点
+    text = text.replace("？", "?").replace("！", "!").replace("，", ",")
+    return text
+
+
 def save_progress_by_chapter(book_url: str, chapter: str) -> None:
     """根据章节标题或序号，将进度保存到该章节起始位置。
 
-    chapter 支持两种格式：
+    chapter 支持多种格式：
     - 数字字符串（如 "5"）→ 按 1-based 序号匹配
-    - 标题字符串（如 "第五章"）→ 模糊匹配章节标题（in 匹配）
+    - 章节号（如 "第一章"）→ 按章节序号匹配
+    - 标题关键词（如 "启示"）→ 模糊匹配章节标题
+    - 完整标题（如 "第一章 外乡人"）→ 忽略空格模糊匹配
     """
     name = Path(book_url).stem
     chapters = qhapi_get_chapters(book_url)
@@ -150,10 +162,21 @@ def save_progress_by_chapter(book_url: str, chapter: str) -> None:
         if 1 <= idx <= len(chapters):
             matched = chapters[idx - 1]
 
-    # 尝试标题模糊匹配
+    # 尝试章节号匹配（如 "第一章" → 匹配以"第一章"开头的标题）
     if matched is None:
+        chapter_norm = _normalize_text(chapter)
         for ch in chapters:
-            if chapter in ch.title:
+            ch_norm = _normalize_text(ch.title)
+            if ch_norm.startswith(chapter_norm):
+                matched = ch
+                break
+
+    # 尝试标题模糊匹配（忽略空格）
+    if matched is None:
+        chapter_norm = _normalize_text(chapter)
+        for ch in chapters:
+            ch_norm = _normalize_text(ch.title)
+            if chapter_norm in ch_norm:
                 matched = ch
                 break
 
