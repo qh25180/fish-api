@@ -67,6 +67,7 @@ cp .env.example .env
 | `API_TOKEN` | `qhapi-token` | 通用 API 访问口令（留空则不验证） |
 | `REMOTE_DOWNLOAD_ALLOW_INTRANET` | `false` | 是否允许远程下载内网地址的文件 |
 | `UPLOAD_ENABLED` | `false` | 是否启用文件上传接口 |
+| `UPLOAD_TIMEOUT_SECONDS` | `300` | 上传超时时间（秒） |
 | `FILE_DOWNLOAD_ENABLED` | `false` | 是否启用文件下载接口 |
 | `MAX_FILE_SIZE_MB` | `50` | 单个文件大小上限（MB） |
 | `DOWNLOAD_TIMEOUT_SECONDS` | `30` | 远程拉取下载超时（秒） |
@@ -77,11 +78,22 @@ cp .env.example .env
 
 ### 4. 启动服务
 
+开发模式（热重载）：
 ```bash
 venv/bin/uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+生产模式（带上传超时配置）：
+```bash
+# 方式一：使用 python 直接启动（自动读取 UPLOAD_TIMEOUT_SECONDS）
+python main.py
+
+# 方式二：使用 uvicorn 命令（需手动指定超时）
+venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 300
+```
+
 > `--reload` 参数开启热重载，修改代码后自动重启，适合开发使用。
+> 上传大文件时如果遇到超时，可根据文件大小适当增加 `UPLOAD_TIMEOUT_SECONDS`（默认 300 秒）。
 
 ### 5. 访问 API 文档
 

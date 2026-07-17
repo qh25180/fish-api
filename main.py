@@ -98,3 +98,14 @@ async def root():
 async def health():
     """健康检查端点。"""
     return {"status": "ok"}
+
+
+# ─── 直接启动（python main.py）───────────────
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        timeout_keep_alive=settings.upload_timeout_seconds,
+    )
