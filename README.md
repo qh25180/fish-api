@@ -78,6 +78,7 @@ venv/bin/uvicorn main:app --reload --host 0.0.0.0 --port 8000
 |------|------|------|
 | `GET` | `/api/v1/novels` | 列出所有文本文件（支持分页和扩展名过滤） |
 | `GET` | `/api/v1/novels/{filename}/chapters` | 获取文件的章节列表 |
+| `GET` | `/api/v1/novels/{filename}/chapters/{chapter_number}` | 获取指定章节的完整内容（自动从章首到下一章开头） |
 | `GET` | `/api/v1/novels/{filename}/content` | 读取文本内容（支持字符偏移或章节定位） |
 | `POST` | `/api/v1/novels/download` | 从 URL 下载小说文件（自动防同名覆盖） |
 | `GET` | `/health` | 健康检查 |
@@ -89,9 +90,24 @@ venv/bin/uvicorn main:app --reload --host 0.0.0.0 --port 8000
 curl http://localhost:8000/api/v1/novels
 ```
 
-**按章节读取内容（第 2 章，300 字）：**
+**按章节列表：**
 ```bash
-curl "http://localhost:8000/api/v1/novels/穿越之江南烟雨.txt/content?chapter=2&offset=300"
+curl "http://localhost:8000/api/v1/novels/穿越之江南烟雨.txt/chapters"
+```
+
+**获取第 2 章完整内容：**
+```bash
+curl "http://localhost:8000/api/v1/novels/穿越之江南烟雨.txt/chapters/2"
+```
+
+**获取第 2 章前 100 字：**
+```bash
+curl "http://localhost:8000/api/v1/novels/穿越之江南烟雨.txt/chapters/2?offset=100"
+```
+
+**按偏移读取内容（传统方式）：**
+```bash
+curl "http://localhost:8000/api/v1/novels/穿越之江南烟雨.txt/content?start=0&offset=300"
 ```
 
 **下载文件：**
