@@ -3,6 +3,7 @@
 import os
 import re
 import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -104,6 +105,25 @@ def _estimate_chapters_from_head(file_path: Path) -> int:
         return 1
 
 
+# ─── Cache（LRU 缓存，避免同一文件反复读取+解析）───────────────
+
+@lru_cache(maxsize=16)
+def _read_and_parse_cached(file_path_str: str) -> tuple[str, tuple]:
+    """读取文件全文并解析章节，结果由 LRU 缓存。
+
+    返回 (text, chapters_tuple)，chapters_tuple 不可变以便缓存。
+    """
+    text = read_file_with_encoding(file_path_str)
+    chapters = _parse_chapters(text)
+    return text, tuple(chapters)
+
+
+def _get_cached_text_and_chapters(file_path: Path) -> tuple[str, list]:
+    """从缓存获取文件文本和章节列表。"""
+    text, chapters_tuple = _read_and_parse_cached(str(file_path))
+    return text, list(chapters_tuple)
+
+
 # ─── Public API ───────────────────────────────────────────────
 
 def list_novel_files(
@@ -164,8 +184,8 @@ def get_chapters(filename: str) -> list[ChapterInfo]:
     if not file_path.exists():
         raise FileNotFoundError(f"文件不存在: {filename}")
 
-    text = read_file_with_encoding(str(file_path))
-    return _parse_chapters(text)
+    _, chapters = _get_cached_text_and_chapters(file_path)
+    return chapters
 
 
 def get_content(
@@ -183,13 +203,12 @@ def get_content(
     if not file_path.exists():
         raise FileNotFoundError(f"文件不存在: {filename}")
 
-    text = read_file_with_encoding(str(file_path))
+    text, chapters = _get_cached_text_and_chapters(file_path)
     total_length = len(text)
     effective_start = start
     chapter_title: str | None = None
 
     if chapter is not None:
-        chapters = _parse_chapters(text)
         if chapter < 1 or chapter > len(chapters):
             raise ValueError(
                 f"章节 {chapter} 不存在，文件共有 {len(chapters)} 章"
@@ -253,17 +272,15 @@ def get_chapter_content(
     可通过 offset 参数限制返回字符数。
     返回 dict 与 ContentResponse schema 兼容。
     """
-    chapters = get_chapters(filename)
+    file_path = _safe_path(filename)
+    text, chapters = _get_cached_text_and_chapters(file_path)
+
     if chapter_number < 1 or chapter_number > len(chapters):
         raise ValueError(
             f"章节 {chapter_number} 不存在，文件共有 {len(chapters)} 章"
         )
 
     ch = chapters[chapter_number - 1]
-
-    # 计算章节结束位置：下一章起始位置，或文件末尾
-    file_path = _safe_path(filename)
-    text = read_file_with_encoding(str(file_path))
     total_length = len(text)
 
     if chapter_number < len(chapters):
