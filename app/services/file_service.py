@@ -187,18 +187,38 @@ def get_content(
                 f"章节 {chapter} 不存在，文件共有 {len(chapters)} 章"
             )
         ch = chapters[chapter - 1]
+
+        # 计算章节结束位置：下一章开头，或文件末尾
+        if chapter < len(chapters):
+            chapter_end_pos = chapters[chapter].start_pos
+        else:
+            chapter_end_pos = total_length
+
         effective_start = ch.start_pos + start
+
+        # 章节内边界检查
+        if start < 0:
+            effective_start = ch.start_pos
+        if effective_start >= chapter_end_pos:
+            effective_start = chapter_end_pos - 1
+        if effective_start < 0:
+            effective_start = 0
+
         chapter_title = ch.title
 
-    # Bounds checking
-    if effective_start < 0:
-        effective_start = 0
-    if effective_start >= total_length:
-        effective_start = max(0, total_length - 1)
+        end = effective_start + offset
+        if end > chapter_end_pos:
+            end = chapter_end_pos
+    else:
+        # 整书偏移：边界检查
+        if effective_start < 0:
+            effective_start = 0
+        if effective_start >= total_length:
+            effective_start = max(0, total_length - 1)
 
-    end = effective_start + offset
-    if end > total_length:
-        end = total_length
+        end = effective_start + offset
+        if end > total_length:
+            end = total_length
 
     content = text[effective_start:end]
 
