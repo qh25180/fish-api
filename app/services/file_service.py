@@ -111,9 +111,6 @@ def _estimate_chapters_from_head(file_path: Path) -> int:
 MAX_FILE_READ_SIZE = 100 * 1024 * 1024
 
 
-MAX_FILE_READ_SIZE = 100 * 1024 * 1024  # 100 MB，防止大文件 OOM
-
-
 @lru_cache(maxsize=16)
 def _read_and_parse_cached(file_path_str: str) -> tuple[str, tuple]:
     """读取文件全文并解析章节，结果由 LRU 缓存。
