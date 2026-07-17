@@ -258,6 +258,13 @@ async def upload_page(
   <div class="file-info" id="fileInfo"></div>
   <label for="token">访问口令</label>
   <input type="text" name="token" id="token" placeholder="如需口令请在此输入">
+<script>
+(function() {{
+  const params = new URLSearchParams(location.search);
+  const t = params.get('token');
+  if (t) document.getElementById('token').value = t;
+}})();
+</script>
   <div class="progress-wrap" id="progressWrap">
     <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
     <div class="progress-text" id="progressText"></div>
@@ -624,6 +631,7 @@ async def files_page(
     error: str | None = None,
 ):
     """文件管理页面：分页浏览、下载、删除服务器上的文件。需要 token 验证。"""
+    from pathlib import Path
     if settings.api_token:
         if not token or not secrets.compare_digest(token, settings.api_token):
             return HTMLResponse(
@@ -656,6 +664,7 @@ async def files_page(
     elif error:
         msg_html = f'<div class="msg error">❌ {html_mod.escape(error)}</div>'
 
+    hidden_books = _load_hidden_books()
     rows_html = ""
     if not files:
         rows_html = '<tr><td colspan="4" style="text-align:center;padding:24px;color:#666;">暂无文件</td></tr>'
@@ -665,7 +674,12 @@ async def files_page(
             encoded_fn = quote(f.filename, safe="")
             dl_url = f"/api/v1/novels/{encoded_fn}/download?token={quote(token or '', safe='')}"
             mod_time = f.modified_time.strftime("%Y-%m-%d %H:%M")
-            rows_html += f"""<tr>
+            book_name = Path(f.filename).stem
+            is_hidden = book_name in hidden_books
+            row_class = ' class="hidden-row"' if is_hidden else ''
+            hide_btn_text = "显示" if is_hidden else "隐藏"
+            hide_btn_class = "btn-unhide" if is_hidden else "btn-hide"
+            rows_html += f"""<tr{row_class}>
 <td>{safe_fn}</td>
 <td>{_format_file_size(f.file_size)}</td>
 <td>{mod_time}</td>
@@ -673,6 +687,14 @@ async def files_page(
 <a href="{dl_url}" class="btn-download" download>下载</a>
 <form method="post" action="/api/v1/novels/{encoded_fn}/delete?token={quote(token or '', safe='')}" class="delete-form" onsubmit="return confirm('确定删除 {safe_fn}？');">
 <button type="submit" class="btn-delete">删除</button>
+</form>
+<form method="post" action="/api/v1/novels/{encoded_fn}/hide?token={quote(token or '', safe='')}" class="delete-form">
+<button type="submit" class="{hide_btn_class}">{hide_btn_text}</button>
+</form>
+<button type="button" class="btn-rename" onclick="var f=document.getElementById('rename-{encoded_fn}');f.style.display=f.style.display==='block'?'none':'block'">重命名</button>
+<form method="post" action="/api/v1/novels/{encoded_fn}/rename?token={quote(token or '', safe='')}" class="rename-form" id="rename-{encoded_fn}">
+<input type="text" name="new_name" value="{safe_fn}" required>
+<button type="submit" style="background:#007acc;color:#fff;border:none;border-radius:4px;">确认</button>
 </form>
 </td>
 </tr>"""
@@ -710,6 +732,16 @@ async def files_page(
   .btn-delete {{ padding: 4px 12px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }}
   .btn-delete:hover {{ background: #a71d2a; }}
   .delete-form {{ display: inline; }}
+  .btn-hide {{ padding: 4px 12px; background: #6c757d; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }}
+  .btn-hide:hover {{ background: #545b62; }}
+  .btn-unhide {{ padding: 4px 12px; background: #28a745; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }}
+  .btn-unhide:hover {{ background: #218838; }}
+  .hidden-row {{ opacity: 0.5; }}
+  .btn-rename {{ padding: 4px 12px; background: #17a2b8; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }}
+  .btn-rename:hover {{ background: #138496; }}
+  .rename-form {{ display: none; margin-top: 8px; }}
+  .rename-form input {{ width: 200px; padding: 4px 8px; font-size: 13px; }}
+  .rename-form button {{ padding: 4px 12px; font-size: 13px; }}
   .pagination {{ margin-top: 16px; text-align: center; font-size: 14px; color: #666; }}
   .pagination a {{ display: inline-block; padding: 6px 16px; margin: 0 4px; background: #e9ecef; color: #333; border-radius: 4px; text-decoration: none; }}
   .pagination a:hover {{ background: #ddd; }}
@@ -801,6 +833,172 @@ async def delete_file(
     return {"success": True, "filename": filename}
 
 
+# ─── 文件隐藏/显示 ──────────────────────────────────
+
+def _hidden_books_file():
+    from pathlib import Path
+    return settings.text_files_dir / ".hidden_books.json"
+
+
+def _load_hidden_books() -> set:
+    import json
+    path = _hidden_books_file()
+    if not path.exists():
+        return set()
+    try:
+        return set(json.loads(path.read_text(encoding="utf-8")))
+    except Exception:
+        return set()
+
+
+def _save_hidden_books(hidden: set):
+    import json
+    path = _hidden_books_file()
+    path.write_text(json.dumps(list(hidden), ensure_ascii=False), encoding="utf-8")
+
+
+@router.post("/{filename}/hide")
+async def hide_book(
+    filename: str,
+    token: str | None = Query(None),
+    request: Request = None,
+):
+    """隐藏/显示书籍（从阅读器隐藏）。"""
+    accept = request.headers.get("accept", "") if request else "" if request else ""
+    is_browser = "text/html" in accept
+
+    if settings.api_token:
+        if not token or not secrets.compare_digest(token, settings.api_token):
+            err_msg = "无效的访问口令"
+            if is_browser:
+                return RedirectResponse(url=f"/api/v1/novels/files?token={quote(token or '', safe='')}&error={quote(err_msg)}", status_code=303)
+            raise HTTPException(status_code=403, detail=err_msg)
+
+    hidden = _load_hidden_books()
+    name = Path(filename).stem
+
+    if name in hidden:
+        hidden.discard(name)
+        msg = f"已显示: {filename}"
+    else:
+        hidden.add(name)
+        msg = f"已隐藏: {filename}"
+
+    _save_hidden_books(hidden)
+
+    if is_browser:
+        return RedirectResponse(
+            url=f"/api/v1/novels/files?token={quote(token or '', safe='')}&success={quote(msg)}",
+            status_code=303,
+        )
+
+    return {"success": True, "filename": filename, "hidden": name in hidden}
+
+
+# ─── 文件重命名 ─────────────────────────────────────
+
+@router.post("/{filename}/rename")
+async def rename_book(
+    filename: str,
+    new_name: str = Form(...),
+    token: str | None = Query(None),
+    request: Request = None,
+):
+    """重命名书籍文件，同步更新进度文件。"""
+    accept = request.headers.get("accept", "") if request else "" if request else ""
+    is_browser = "text/html" in accept
+
+    if settings.api_token:
+        if not token or not secrets.compare_digest(token, settings.api_token):
+            err_msg = "无效的访问口令"
+            if is_browser:
+                return RedirectResponse(url=f"/api/v1/novels/files?token={quote(token or '', safe='')}&error={quote(err_msg)}", status_code=303)
+            raise HTTPException(status_code=403, detail=err_msg)
+
+    # 安全校验
+    try:
+        old_path = file_service._safe_path(filename)
+    except ValueError as e:
+        err_msg = str(e)
+        if is_browser:
+            return RedirectResponse(url=f"/usr/local/dev/qhapi/api/v1/novels/files?token={quote(token or '', safe='')}&error={quote(err_msg)}", status_code=303)
+        raise HTTPException(status_code=400, detail=err_msg)
+
+    if not old_path.exists():
+        err_msg = "文件不存在"
+        if is_browser:
+            return RedirectResponse(url=f"/api/v1/novels/files?token={quote(token or '', safe='')}&error={quote(err_msg)}", status_code=303)
+        raise HTTPException(status_code=404, detail=err_msg)
+
+    # 构建新文件名
+    old_stem = Path(filename).stem
+    suffix = old_path.suffix
+    safe_new_name = os.path.basename(new_name.strip())
+    if not safe_new_name:
+        err_msg = "新名称不能为空"
+        if is_browser:
+            return RedirectResponse(url=f"/api/v1/novels/files?token={quote(token or '', safe='')}&error={quote(err_msg)}", status_code=303)
+        raise HTTPException(status_code=400, detail=err_msg)
+
+    # 确保新文件名有扩展名
+    if not Path(safe_new_name).suffix:
+        safe_new_name += suffix
+
+    new_path = old_path.parent / safe_new_name
+
+    if new_path.exists() and new_path != old_path:
+        err_msg = f"文件名已存在: {safe_new_name}"
+        if is_browser:
+            return RedirectResponse(url=f"/api/v1/novels/files?token={quote(token or '', safe='')}&error={quote(err_msg)}", status_code=303)
+        raise HTTPException(status_code=400, detail=err_msg)
+
+    try:
+        old_path.rename(new_path)
+    except Exception as e:
+        err_msg = f"重命名失败: {e}"
+        if is_browser:
+            return RedirectResponse(url=f"/api/v1/novels/files?token={quote(token or '', safe='')}&error={quote(err_msg)}", status_code=303)
+        raise HTTPException(status_code=500, detail=err_msg)
+
+    # 同步更新进度文件
+    new_stem = Path(safe_new_name).stem
+    progress_path = settings.text_files_dir / ".legado_progress.json"
+    if progress_path.exists():
+        try:
+            import json
+            progress = json.loads(progress_path.read_text(encoding="utf-8"))
+            if old_stem in progress:
+                progress[new_stem] = progress.pop(old_stem)
+                progress_path.write_text(json.dumps(progress, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    # 同步更新隐藏列表
+    hidden_path = settings.text_files_dir / ".hidden_books.json"
+    if hidden_path.exists():
+        try:
+            import json
+            hidden = set(json.loads(hidden_path.read_text(encoding="utf-8")))
+            if old_stem in hidden:
+                hidden.discard(old_stem)
+                hidden.add(new_stem)
+                hidden_path.write_text(json.dumps(list(hidden), ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+
+    # 清除章节缓存
+    from app.services.file_service import _read_and_parse_cached
+    _read_and_parse_cached.cache_clear()
+
+    if is_browser:
+        return RedirectResponse(
+            url=f"/api/v1/novels/files?token={quote(token or '', safe='')}&success={quote(f'已重命名: {filename} → {safe_new_name}')}",
+            status_code=303,
+        )
+
+    return {"success": True, "old_filename": filename, "new_filename": safe_new_name}
+
+
 # ─── 远程下载页面 ───────────────────────────────────
 
 @router.get("/download", response_class=HTMLResponse, summary="远程下载页面（浏览器访问）")
@@ -846,6 +1044,13 @@ async def download_page(
   <label for="token">访问口令</label>
   <input type="text" name="token" id="token" placeholder="如需口令请在此输入">
   <button type="submit">下载</button>
+<script>
+(function() {{
+  const params = new URLSearchParams(location.search);
+  const t = params.get('token');
+  if (t) document.getElementById('token').value = t;
+}})();
+</script>
   <div class="tip">支持 http:// 和 https:// 协议的 URL</div>
 </form>
 </body>
@@ -1006,6 +1211,9 @@ _READER_STYLE = """
 
   /* 章节切换 */
   .chapter-bar { display: flex; justify-content: space-between; margin-top: 16px; }
+  .toggle-chapters { display: inline-block; padding: 6px 14px; background: #6c757d; color: #fff; border-radius: 4px; cursor: pointer; font-size: 13px; margin-right: 12px; vertical-align: middle; }
+  .toggle-chapters:hover { background: #545b62; }
+  .chapter-list.collapsed { display: none; }
 
   /* 状态 */
   .status { text-align: center; color: #888; padding: 40px; font-size: 14px; }
@@ -1034,7 +1242,10 @@ async def read_page(
 <div class="container">
   <div class="header">
     <h1 id="headerTitle">📖 小说阅读</h1>
-    {back_html}
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span class="toggle-chapters" id="toggleChapters" onclick="toggleChapterList()" style="display:none">📑 目录</span>
+      <a href="/api/v1/novels/pages?token={t}" style="color:#007acc;text-decoration:none;font-size:14px;">← 返回索引</a>
+    </div>
   </div>
 
   <!-- 选书 -->
@@ -1045,7 +1256,7 @@ async def read_page(
 
   <!-- 章节列表 + 阅读区 -->
   <div id="readerView" style="display:none">
-    <div class="chapter-list" id="chapterList"></div>
+    <div class="chapter-list collapsed" id="chapterList"></div>
     <div class="reader" id="readerContent">
       <div class="reader-title" id="readerTitle"></div>
       <div id="readerText"></div>
@@ -1135,6 +1346,11 @@ async def read_page(
   }}
 
   // ─── 章节列表 ──────────────────────
+
+  window.toggleChapterList = function() {{
+    const list = document.getElementById('chapterList');
+    list.classList.toggle('collapsed');
+  }};
 
   function renderChapterList() {{
     const list = document.getElementById('chapterList');
