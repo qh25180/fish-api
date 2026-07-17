@@ -1,8 +1,12 @@
 ﻿"""QHAPI — API 入口"""
 
+import secrets
+import string
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import settings
 from app.routers import novels, legado
 
 app = FastAPI(
@@ -11,6 +15,27 @@ app = FastAPI(
     "当前提供文件列表浏览、章节解析、文本内容读取、远程文件下载等功能。",
     version="1.0.0",
 )
+
+# ─── 检测默认口令并自动生成 ───────────────────────
+if settings.download_token == "qhapi-token":
+    chars = string.ascii_letters + string.digits + "!@#$%^&*"
+    new_token = ''.join(secrets.choice(chars) for _ in range(8))
+    try:
+        with open(".env") as f:
+            content = f.read()
+        content = content.replace("DOWNLOAD_TOKEN=qhapi-token",
+                                  f"DOWNLOAD_TOKEN={new_token}")
+        with open(".env", "w") as f:
+            f.write(content)
+        settings.download_token = new_token
+        print()
+        print("=" * 60)
+        print(f"⚠️  检测到默认口令，已自动生成新口令: {new_token}")
+        print("   下载接口需携带 token 参数访问")
+        print("=" * 60)
+        print()
+    except Exception as e:
+        print(f"[警告] 无法写入 .env 文件（{e}），默认口令 qhapi-token 保持生效")
 
 # CORS — 开放所有来源（局域网使用）
 app.add_middleware(

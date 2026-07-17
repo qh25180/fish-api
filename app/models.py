@@ -54,8 +54,9 @@ class ContentResponse(BaseModel):
 # ─── Download ─────────────────────────────────────────────────
 
 class DownloadRequest(BaseModel):
-    """Request to download a novel from URL."""
+    """Request to download a file from URL."""
     url: str
+    token: str | None = None
 
 
 class DownloadResponse(BaseModel):
