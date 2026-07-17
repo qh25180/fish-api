@@ -1,7 +1,10 @@
 ﻿"""Download service: fetch novel files from URLs with safety checks."""
 
+import ipaddress
 import os
+import socket
 from pathlib import Path
+from urllib.parse import urlparse
 
 import aiofiles
 import httpx
@@ -32,6 +35,43 @@ async def _generate_unique_filename(
         if not new_path.exists():
             return new_path, True
         counter += 1
+
+
+def _check_url_allowed(url: str) -> None:
+    """检查 URL 目标地址是否允许下载。
+
+    阻止回环/链路本地地址；
+    私有地址仅在 download_allow_intranet 开启时放行。
+    """
+    host = urlparse(url).hostname
+    if not host:
+        raise ValueError("无效的 URL")
+
+    # 收集待检查的 IP 列表
+    ips_to_check: list[str] = []
+
+    # 如果 host 本身是 IP 字面量
+    try:
+        ips_to_check.append(ipaddress.ip_address(host).compressed)
+    except ValueError:
+        # host 是域名 → DNS 解析
+        try:
+            addrinfo = socket.getaddrinfo(host, 80)
+            ips_to_check = list(set(
+                addr[4][0] for addr in addrinfo
+            ))
+        except OSError:
+            # DNS 解析失败，无法判断，安全起见阻止
+            raise ValueError(f"无法解析域名: {host}")
+
+    for ip_str in ips_to_check:
+        ip = ipaddress.ip_address(ip_str)
+        if ip.is_loopback or ip.is_link_local:
+            raise ValueError("不允许下载回环或链路本地地址")
+        if ip.is_private and not settings.download_allow_intranet:
+            raise ValueError(
+                "内网下载未开放（设置 DOWNLOAD_ALLOW_INTRANET=true 可开启）"
+            )
 
 
 def _extract_filename(url: str, content_disposition: str) -> str:
@@ -90,9 +130,13 @@ async def download_novel(url: str) -> dict:
         async with client.stream("GET", url) as response:
             response.raise_for_status()
 
+            # 请求前校验 URL（含域名 DNS 解析检查）
+            _check_url_allowed(str(response.url))
+
             # Determine filename
             content_disposition = response.headers.get("content-disposition", "")
             raw_name = _extract_filename(url, content_disposition)
+            raw_name = os.path.basename(raw_name)
             raw_name = _ensure_allowed_extension(raw_name)
 
             # Generate unique path

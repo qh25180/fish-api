@@ -9,6 +9,7 @@ from app.models import (
     DownloadRequest,
     DownloadResponse,
 )
+from app.config import settings
 from app.services import file_service, download_service
 
 router = APIRouter(prefix="/api/v1/novels", tags=["novels"])
@@ -111,7 +112,27 @@ async def read_content(
 
 @router.post("/download", response_model=DownloadResponse)
 async def download_novel(request: DownloadRequest):
-    """从 URL 下载文件到配置目录（自动防同名覆盖）。"""
+    """从 URL 下载文件到配置目录（自动防同名覆盖）。
+
+    需要配置 DOWNLOAD_ENABLED=true 开启此接口。
+    如果配置了 DOWNLOAD_TOKEN，需在请求体中传入一致的 token。
+    """
+    # 开关检查
+    if not settings.download_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="远程下载功能未启用（DOWNLOAD_ENABLED=false）",
+        )
+
+    # Token 验证（配置为空字符串则跳过）
+    if settings.download_token:
+        token = request.token or ""
+        if token != settings.download_token:
+            raise HTTPException(
+                status_code=403,
+                detail="无效的访问口令",
+            )
+
     url = request.url.strip()
 
     if not url.startswith(("http://", "https://")):

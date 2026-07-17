@@ -60,9 +60,12 @@ cp .env.example .env
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `TEXT_FILES_DIR` | `./novels` |文本文件存放目录 |
+| `TEXT_FILES_DIR` | `./novels` | 文本文件存放目录 |
 | `TEXT_FILE_EXTENSIONS` | `.txt,.md` | 允许的文件扩展名 |
 | `DEFAULT_ENCODING` | `auto` | 默认编码（auto 表示自动检测） |
+| `DOWNLOAD_ENABLED` | `false` | 是否启用远程下载接口 |
+| `DOWNLOAD_TOKEN` | `qhapi-token` | 下载访问口令（留空则不验证） |
+| `DOWNLOAD_ALLOW_INTRANET` | `false` | 允许下载内网地址的文件 |
 | `MAX_FILE_SIZE_MB` | `50` | 下载文件大小上限（MB） |
 | `DOWNLOAD_TIMEOUT_SECONDS` | `30` | 下载超时时间（秒） |
 
@@ -90,8 +93,10 @@ venv/bin/uvicorn main:app --reload --host 0.0.0.0 --port 8000
 | `GET` | `/api/v1/novels/{filename}/chapters` | 获取文件的章节列表 |
 | `GET` | `/api/v1/novels/{filename}/chapters/{chapter_number}` | 按章节获取内容（支持章节内偏移） |
 | `GET` | `/api/v1/novels/{filename}/content` | 按全局偏移获取内容（支持按章节定位） |
-| `POST` | `/api/v1/novels/download` | 从 URL 下载文件（自动防同名覆盖） |
+| `POST` | `/api/v1/novels/download` | 从 URL 下载文件（需开启 + token 验证） |
 | `GET` | `/health` | 健康检查 |
+
+> **下载接口说明**：需在 `.env` 中设置 `DOWNLOAD_ENABLED=true` 开启。如果配置了 `DOWNLOAD_TOKEN`，请求体中需携带匹配的 `token` 字段（未配置或为空则跳过验证）。默认令牌首次启动时会自动生成并输出到控制台。
 
 ### 定位方式一览
 
@@ -140,11 +145,17 @@ curl "http://localhost:8000/api/v1/novels/示例_江南烟雨.txt/chapters/2"
 curl "http://localhost:8000/api/v1/novels/示例_江南烟雨.txt/chapters/2?start=50&offset=100"
 ```
 
-**下载文件：**
+**下载文件（需开启 DOWNLOAD_ENABLED=true）：**
 ```bash
+# 未配口令时
 curl -X POST http://localhost:8000/api/v1/novels/download \
   -H "Content-Type: application/json" \
-  -d '{"url":"https://example.com/novel.txt"}'
+  -d '{"url":"https://example.com/file.txt"}'
+
+# 有口令时需传入 token
+curl -X POST http://localhost:8000/api/v1/novels/download \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/file.txt","token":"你的口令"}'
 ```
 
 ## 功能特性
