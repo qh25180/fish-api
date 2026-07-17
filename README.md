@@ -1,6 +1,13 @@
 ﻿# QHAPI — 阅读 API
 
-基于 Python + FastAPI 构建的轻量阅读 API 服务，支持文件浏览、章节解析、文本内容读取和远程文件下载。
+<p>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10+-blue" alt="Python"></a>
+  <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-0.110+-green" alt="FastAPI"></a>
+</p>
+
+QHAPI 是基于 Python + FastAPI 构建的通用 API 服务。
+目前提供文本文件浏览、章节解析、内容读取和远程文件下载等功能，并兼容 Legado HTTP API 协议，可配合 VS Code 插件在状态栏中阅读文本。
 
 ## 技术栈
 
@@ -17,7 +24,7 @@
 │   ├── models.py              # Pydantic 请求/响应模型
 │   ├── legado_models.py       # Legado HTTP API 兼容数据模型
 │   ├── routers/
-│   │   ├── novels.py          # 小说 API 路由
+│   │   ├── novels.py          # 阅读 API 路由
 │   │   └── legado.py          # Legado HTTP API 兼容路由
 │   ├── services/
 │   │   ├── file_service.py    # 文件扫描、章节解析、文本提取
@@ -105,32 +112,32 @@ curl http://localhost:8000/api/v1/novels
 
 **章节列表：**
 ```bash
-curl "http://localhost:8000/api/v1/novels/穿越之江南烟雨.txt/chapters"
+curl "http://localhost:8000/api/v1/novels/示例_江南烟雨.txt/chapters"
 ```
 
 **从整书第 500 字起取 200 字：**
 ```bash
-curl "http://localhost:8000/api/v1/novels/穿越之江南烟雨.txt/content?start=500&offset=200"
+curl "http://localhost:8000/api/v1/novels/示例_江南烟雨.txt/content?start=500&offset=200"
 ```
 
 **从第 2 章开头起取 200 字：**
 ```bash
-curl "http://localhost:8000/api/v1/novels/穿越之江南烟雨.txt/content?chapter=2&offset=200"
+curl "http://localhost:8000/api/v1/novels/示例_江南烟雨.txt/content?chapter=2&offset=200"
 ```
 
 **从第 2 章第 100 字起取 200 字：**
 ```bash
-curl "http://localhost:8000/api/v1/novels/穿越之江南烟雨.txt/content?chapter=2&start=100&offset=200"
+curl "http://localhost:8000/api/v1/novels/示例_江南烟雨.txt/content?chapter=2&start=100&offset=200"
 ```
 
 **获取第 2 章完整内容：**
 ```bash
-curl "http://localhost:8000/api/v1/novels/穿越之江南烟雨.txt/chapters/2"
+curl "http://localhost:8000/api/v1/novels/示例_江南烟雨.txt/chapters/2"
 ```
 
 **从第 2 章第 50 字起取 100 字（独立接口）：**
 ```bash
-curl "http://localhost:8000/api/v1/novels/穿越之江南烟雨.txt/chapters/2?start=50&offset=100"
+curl "http://localhost:8000/api/v1/novels/示例_江南烟雨.txt/chapters/2?start=50&offset=100"
 ```
 
 **下载文件：**
@@ -178,14 +185,72 @@ curl -X POST http://localhost:8000/api/v1/novels/download \
 }
 ```
 
-即可连接本服务，在 VS Code 状态栏中阅读小说。
+即可连接本服务，在 VS Code 状态栏中阅读文本。
 
 ### 数据映射说明
 
 | 文件/章节 | → | Legado 模型 |
 |-----------|---|-------------|
-| `novels/三体.txt` | → | 书架上的书（name="三体", bookUrl="三体.txt"）|
+| `novels/示例_江南烟雨.txt` | → | 书架上的书（name="示例_江南烟雨", bookUrl="示例_江南烟雨.txt"）|
 | 文件中的"第一章" | → | 章节（title="第一章", index=0）|
 | 章节全文内容 | → | `getBookContent` 返回纯文本 |
 
-## 项目结构
+---
+
+## 开发指南
+
+### 环境要求
+
+- Python 3.10+
+- pip
+
+### 本地开发
+
+```bash
+git clone https://github.com/qh25180/fish-api.git
+cd fish-api
+python3 -m venv venv
+venv/bin/pip install -r requirements.txt
+cp .env.example .env
+venv/bin/uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 项目结构
+
+```
+├── app/
+│   ├── config.py           # 配置管理
+│   ├── models.py           # 数据模型
+│   ├── legado_models.py    # Legado 兼容模型
+│   ├── routers/
+│   │   ├── novels.py       # 核心路由
+│   │   └── legado.py       # Legado 兼容路由
+│   ├── services/
+│   │   ├── file_service.py     # 文件/章节处理
+│   │   ├── download_service.py # 远程下载
+│   │   └── legado_service.py   # Legado 映射
+│   └── utils/
+│       └── encoding.py    # 编码检测
+├── novels/                 # 文本存放目录
+├── scripts/
+│   └── update-hosts.sh     # GitHub hosts 更新
+├── main.py                 # 入口
+├── requirements.txt
+├── .env.example
+└── README.md
+```
+
+### 扩展新功能
+
+在 `app/routers/` 下新建路由文件，实现业务逻辑后在 `main.py` 中注册即可：
+
+```python
+from app.routers import your_module
+app.include_router(your_module.router)
+```
+
+---
+
+## 许可证
+
+[MIT](LICENSE) © 2026 QHAPI
