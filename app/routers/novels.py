@@ -176,6 +176,7 @@ async def pages_index(
 
     t = quote(token, safe="")
     pages = [
+        ("📖 小说阅读", "在线阅读服务器上的小说", f"/api/v1/novels/read?token={t}"),
         ("📤 文件上传", "上传本地文件到服务器，支持分片上传", f"/api/v1/novels/upload?token={t}"),
         ("📥 远程下载", "从 URL 拉取文件到服务器", f"/api/v1/novels/download?token={t}"),
         ("📁 文件管理", "浏览、下载、删除服务器上的文件", f"/api/v1/novels/files?token={t}"),
@@ -964,3 +965,300 @@ async def download_file(
         filename=file_path.name,
         media_type="application/octet-stream",
     )
+
+
+# ─── 小说阅读器页面 ─────────────────────────────────
+
+_READER_STYLE = """
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Noto Serif SC", "Source Han Serif CN", serif; background: #f5f1eb; color: #333; }
+  .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+  .header { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #ddd; margin-bottom: 20px; }
+  .header h1 { font-size: 18px; }
+  .nav-link { color: #007acc; text-decoration: none; font-size: 14px; }
+  .nav-link:hover { text-decoration: underline; }
+
+  /* 选书列表 */
+  .book-list { list-style: none; }
+  .book-item { padding: 14px 16px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; cursor: pointer; background: #fff; transition: background 0.15s; }
+  .book-item:hover { background: #e9ecef; }
+  .book-name { font-size: 16px; font-weight: bold; }
+  .book-info { font-size: 13px; color: #888; margin-top: 4px; }
+
+  /* 章节列表 */
+  .chapter-list { max-height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; background: #fff; margin-bottom: 20px; }
+  .chapter-item { padding: 10px 16px; border-bottom: 1px solid #eee; cursor: pointer; font-size: 14px; }
+  .chapter-item:last-child { border-bottom: none; }
+  .chapter-item:hover { background: #e9ecef; }
+  .chapter-item.active { background: #007acc; color: #fff; }
+
+  /* 阅读区域 */
+  .reader { background: #fff; border-radius: 6px; padding: 30px 40px; min-height: 400px; line-height: 1.9; font-size: 17px; white-space: pre-wrap; word-wrap: break-word; }
+  .reader-title { font-size: 20px; font-weight: bold; text-align: center; margin-bottom: 24px; color: #555; }
+
+  /* 分页控件 */
+  .pagination-bar { display: flex; justify-content: center; align-items: center; gap: 16px; margin-top: 20px; padding: 16px 0; }
+  .pagination-bar button { padding: 8px 20px; border: 1px solid #007acc; background: #fff; color: #007acc; border-radius: 4px; cursor: pointer; font-size: 14px; }
+  .pagination-bar button:hover { background: #007acc; color: #fff; }
+  .pagination-bar button:disabled { border-color: #ccc; color: #ccc; cursor: not-allowed; background: #fff; }
+  .page-info { font-size: 14px; color: #666; }
+
+  /* 章节切换 */
+  .chapter-bar { display: flex; justify-content: space-between; margin-top: 16px; }
+
+  /* 状态 */
+  .status { text-align: center; color: #888; padding: 40px; font-size: 14px; }
+  .loading { text-align: center; padding: 40px; color: #888; }
+</style>
+"""
+
+
+@router.get("/read", response_class=HTMLResponse, summary="小说阅读器（浏览器访问）")
+async def read_page(
+    token: str | None = Query(None),
+):
+    """在线阅读服务器上的小说。需要 token 验证。"""
+    back_html = _back_to_index_html(token)
+    t = quote(token or "", safe="")
+
+    html = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小说阅读</title>
+{_READER_STYLE}
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1 id="headerTitle">📖 小说阅读</h1>
+    {back_html}
+  </div>
+
+  <!-- 选书 -->
+  <div id="bookView">
+    <div class="loading" id="bookLoading">加载书架...</div>
+    <ul class="book-list" id="bookList" style="display:none"></ul>
+  </div>
+
+  <!-- 章节列表 + 阅读区 -->
+  <div id="readerView" style="display:none">
+    <div class="chapter-list" id="chapterList"></div>
+    <div class="reader" id="readerContent">
+      <div class="reader-title" id="readerTitle"></div>
+      <div id="readerText"></div>
+    </div>
+    <div class="pagination-bar">
+      <button id="btnPrevPage" onclick="prevPage()">上一页</button>
+      <span class="page-info" id="pageInfo"></span>
+      <button id="btnNextPage" onclick="nextPage()">下一页</button>
+    </div>
+    <div class="chapter-bar">
+      <button id="btnPrevCh" onclick="prevChapter()">上一章</button>
+      <button id="btnNextCh" onclick="nextChapter()">下一章</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {{
+  const BASE = '/api/v1/novels';
+  const TOKEN = '{t}';
+  const SNIPPET_LEN = 800;
+
+  let books = [];
+  let chapters = [];
+  let book = null;
+  let chapterIndex = 0;
+  let chapterText = '';
+  let pageOffset = 0;
+  let totalPages = 1;
+
+  // ─── API 调用 ──────────────────────
+
+  async function api(path, params) {{
+    const url = new URL(path, location.origin);
+    if (TOKEN) url.searchParams.set('token', TOKEN);
+    if (params) Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
+    const resp = await fetch(url);
+    const raw = await resp.json();
+    const data = raw.detail || raw;
+    if (data.isSuccess === false) throw new Error(data.errorMsg || '请求失败');
+    return data.data !== undefined ? data.data : data;
+  }}
+
+  // ─── 选书 ──────────────────────────
+
+  async function loadBooks() {{
+    try {{
+      books = await api('/getBookshelf');
+      // 按最近阅读排序
+      books.sort((a, b) => (b.durChapterTime || 0) - (a.durChapterTime || 0));
+      const list = document.getElementById('bookList');
+      list.innerHTML = '';
+      books.forEach((b, i) => {{
+        const li = document.createElement('li');
+        li.className = 'book-item';
+        const progress = b.durChapterTitle ? '上次阅读: ' + b.durChapterTitle : '未阅读';
+        li.innerHTML = '<div class="book-name">' + escHtml(b.name) + '</div>'
+          + '<div class="book-info">' + escHtml(progress) + ' · ' + b.totalChapterNum + ' 章</div>';
+        li.onclick = () => selectBook(i);
+        list.appendChild(li);
+      }});
+      document.getElementById('bookLoading').style.display = 'none';
+      list.style.display = 'block';
+    }} catch (e) {{
+      document.getElementById('bookLoading').textContent = '加载失败: ' + e.message;
+    }}
+  }}
+
+  async function selectBook(index) {{
+    book = books[index];
+    document.getElementById('headerTitle').textContent = book.name;
+    document.getElementById('bookView').style.display = 'none';
+    document.getElementById('readerView').style.display = 'block';
+    document.getElementById('chapterLoading') && (document.getElementById('chapterLoading').style.display = 'block');
+
+    try {{
+      chapters = await api('/getChapterList', {{ url: book.bookUrl }});
+      renderChapterList();
+
+      // 恢复上次阅读位置
+      chapterIndex = book.durChapterIndex || 0;
+      pageOffset = book.durChapterPos || 0;
+      await loadChapter();
+    }} catch (e) {{
+      document.getElementById('readerText').textContent = '加载章节失败: ' + e.message;
+    }}
+  }}
+
+  // ─── 章节列表 ──────────────────────
+
+  function renderChapterList() {{
+    const list = document.getElementById('chapterList');
+    list.innerHTML = '';
+    chapters.forEach((ch, i) => {{
+      const div = document.createElement('div');
+      div.className = 'chapter-item' + (i === chapterIndex ? ' active' : '');
+      div.textContent = ch.title;
+      div.onclick = () => {{ chapterIndex = i; pageOffset = 0; loadChapter(); }};
+      list.appendChild(div);
+    }});
+  }}
+
+  // ─── 加载章节内容 ──────────────────
+
+  async function loadChapter() {{
+    if (chapterIndex < 0 || chapterIndex >= chapters.length) return;
+    document.getElementById('readerTitle').textContent = chapters[chapterIndex].title;
+    document.getElementById('readerText').textContent = '加载中...';
+
+    try {{
+      chapterText = await api('/getBookContent', {{
+        url: book.bookUrl,
+        index: chapterIndex
+      }});
+      // 去除 HTML 标签
+      chapterText = htmlToText(chapterText);
+      renderPage();
+      renderChapterList();
+      saveProgress();
+    }} catch (e) {{
+      document.getElementById('readerText').textContent = '加载失败: ' + e.message;
+    }}
+  }}
+
+  // ─── 分页渲染 ──────────────────────
+
+  function renderPage() {{
+    totalPages = Math.max(1, Math.ceil(chapterText.length / SNIPPET_LEN));
+    if (pageOffset >= chapterText.length) pageOffset = Math.max(0, chapterText.length - 1);
+    const start = pageOffset;
+    const end = Math.min(start + SNIPPET_LEN, chapterText.length);
+    const text = chapterText.substring(start, end);
+
+    document.getElementById('readerText').textContent = text || '（本章暂无内容）';
+    document.getElementById('pageInfo').textContent = '第 ' + (start + 1) + '-' + end + ' 字 / 共 ' + chapterText.length + ' 字';
+    document.getElementById('btnPrevPage').disabled = (start <= 0);
+    document.getElementById('btnNextPage').disabled = (end >= chapterText.length);
+    document.getElementById('btnPrevCh').disabled = (chapterIndex <= 0);
+    document.getElementById('btnNextCh').disabled = (chapterIndex >= chapters.length - 1);
+  }}
+
+  // ─── 翻页 ──────────────────────────
+
+  window.prevPage = function() {{
+    pageOffset = Math.max(0, pageOffset - SNIPPET_LEN);
+    renderPage();
+    saveProgress();
+  }};
+
+  window.nextPage = function() {{
+    if (pageOffset + SNIPPET_LEN >= chapterText.length) {{
+      nextChapter();
+      return;
+    }}
+    pageOffset += SNIPPET_LEN;
+    renderPage();
+    saveProgress();
+  }};
+
+  // ─── 切换章节 ──────────────────────
+
+  window.prevChapter = function() {{
+    if (chapterIndex <= 0) return;
+    chapterIndex--;
+    pageOffset = 0;
+    loadChapter();
+  }};
+
+  window.nextChapter = function() {{
+    if (chapterIndex >= chapters.length - 1) return;
+    chapterIndex++;
+    pageOffset = 0;
+    loadChapter();
+  }};
+
+  // ─── 保存进度 ──────────────────────
+
+  async function saveProgress() {{
+    if (!book) return;
+    try {{
+      await fetch('/saveBookProgress', {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{
+          name: book.name,
+          author: book.author,
+          durChapterIndex: chapterIndex,
+          durChapterPos: pageOffset,
+          durChapterTime: Date.now(),
+          durChapterTitle: chapters[chapterIndex]?.title || ''
+        }})
+      }});
+    }} catch (e) {{}}
+  }}
+
+  // ─── 工具函数 ──────────────────────
+
+  function escHtml(s) {{
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }}
+
+  function htmlToText(html) {{
+    const d = document.createElement('div');
+    d.innerHTML = html;
+    return d.textContent || d.innerText || '';
+  }}
+
+  // ─── 启动 ──────────────────────────
+  loadBooks();
+}})();
+</script>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
