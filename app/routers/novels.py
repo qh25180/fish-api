@@ -1330,6 +1330,7 @@ async def read_page(
     document.getElementById('headerTitle').textContent = book.name;
     document.getElementById('bookView').style.display = 'none';
     document.getElementById('readerView').style.display = 'block';
+    document.getElementById('toggleChapters').style.display = 'inline-block';
     document.getElementById('chapterLoading') && (document.getElementById('chapterLoading').style.display = 'block');
 
     try {{
