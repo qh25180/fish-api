@@ -122,6 +122,9 @@ async def download_novel(url: str) -> dict:
         max_connections=10,
     )
 
+    # 请求前先校验 URL 安全性（此时尚未建立连接）
+    _check_url_allowed(url)
+
     async with httpx.AsyncClient(
         timeout=timeout,
         follow_redirects=True,
@@ -130,7 +133,7 @@ async def download_novel(url: str) -> dict:
         async with client.stream("GET", url) as response:
             response.raise_for_status()
 
-            # 请求前校验 URL（含域名 DNS 解析检查）
+            # 重定向后再次校验最终 URL（防止 302 跳转到内网）
             _check_url_allowed(str(response.url))
 
             # Determine filename
