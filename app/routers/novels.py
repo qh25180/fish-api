@@ -1,4 +1,4 @@
-"""Novel API routes."""
+﻿"""Novel API routes."""
 
 import html as html_mod
 import json
@@ -176,7 +176,7 @@ async def pages_index(
 
     t = quote(token, safe="")
     pages = [
-        ("📖 小说阅读", "在线阅读服务器上的小说", f"/api/v1/novels/read?token={t}"),
+        ("📖 文本阅读", "在线阅读服务器上的文本", f"/api/v1/novels/read?token={t}"),
         ("📤 文件上传", "上传本地文件到服务器，支持分片上传", f"/api/v1/novels/upload?token={t}"),
         ("📥 远程下载", "从 URL 拉取文件到服务器", f"/api/v1/novels/download?token={t}"),
         ("📁 文件管理", "浏览、下载、删除服务器上的文件", f"/api/v1/novels/files?token={t}"),
@@ -1172,7 +1172,7 @@ async def download_file(
     )
 
 
-# ─── 小说阅读器页面 ─────────────────────────────────
+# ─── 文本阅读器页面 ─────────────────────────────────
 
 _READER_STYLE = """
 <style>
@@ -1222,11 +1222,11 @@ _READER_STYLE = """
 """
 
 
-@router.get("/read", response_class=HTMLResponse, summary="小说阅读器（浏览器访问）")
+@router.get("/read", response_class=HTMLResponse, summary="文本阅读器（浏览器访问）")
 async def read_page(
     token: str | None = Query(None),
 ):
-    """在线阅读服务器上的小说。需要 token 验证。"""
+    """在线阅读服务器上的文本。需要 token 验证。"""
     back_html = _back_to_index_html(token)
     t = quote(token or "", safe="")
 
@@ -1235,13 +1235,13 @@ async def read_page(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>小说阅读</title>
+<title>文本阅读</title>
 {_READER_STYLE}
 </head>
 <body>
 <div class="container">
   <div class="header">
-    <h1 id="headerTitle">📖 小说阅读</h1>
+    <h1 id="headerTitle">📖 文本阅读</h1>
     <div style="display:flex;align-items:center;gap:12px;">
       <span class="toggle-chapters" id="toggleChapters" onclick="toggleChapterList()" style="display:none">📑 目录</span>
       <a href="/api/v1/novels/pages?token={t}" style="color:#007acc;text-decoration:none;font-size:14px;">← 返回索引</a>

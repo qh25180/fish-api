@@ -48,6 +48,76 @@ def _safe_path(filename: str) -> Path:
     return full_path
 
 
+def _is_likely_chapter_title(text: str, match: re.Match) -> bool:
+    """判断正则匹配结果是否为真正的章节标题。
+
+    验证规则：
+    1. 匹配位置必须在行首（允许前导空白、常见括号）
+    2. 所在行不能过长
+    3. 不在引号内部
+    4. 数字编号不能是小数（如 1.5 / 9.2）
+    5. 行不能全是装饰符（------, ======）
+    6. 匹配后紧跟逗号句号 → 是正文讨论章节，不是标题
+    """
+    pos = match.start()
+
+    line_start = text.rfind("\n", 0, pos) + 1
+    line_end = text.find("\n", pos)
+    if line_end == -1:
+        line_end = len(text)
+    line = text[line_start:line_end]
+    line_stripped = line.strip()
+
+    # ① 空行或过长 → 不是标题
+    if not line_stripped or len(line_stripped) > 60:
+        return False
+
+    # ② 行全是装饰符（---, ===, ***）→ 不是标题
+    if all(c in "=-*_—～~·" for c in line_stripped):
+        return False
+
+    # ③ 对于"部"和"卷"标题，行必须很短（≤25字），否则是正文误匹配
+    match_text = match.group()
+    if any(suffix in match_text for suffix in ("部", "卷")):
+        if len(line_stripped) > 25:
+            return False
+
+    # ④ 匹配前到行首之间只能有空白或常见括号/分隔符前缀
+    before_match = text[line_start:pos]
+    if before_match.strip():
+        stripped_before = before_match.strip()
+        allowed_brackets = set("【（〔［<《「『")
+        if stripped_before not in allowed_brackets and not re.match(r"^[-=*]{2,}$", stripped_before):
+            return False
+
+    # ⑤ 检查匹配位置是否在引号内部（只看同一行内）
+    line_before = text[line_start:pos]
+    if line_before.count('"') % 2 == 1:
+        return False
+    if line_before.count('\u201c') != line_before.count('\u201d'):
+        return False
+    if line_before.count('\u300c') != line_before.count('\u300d'):
+        return False
+
+    # ⑥ 匹配后紧跟逗号/句号等 → 是正文"第X章"引用，不是标题
+    after_on_line = line[match.end():].strip()
+    if after_on_line and after_on_line[0] in "，。！？；：,":
+        return False
+
+    # ⑦ 数字编号后紧跟数字 → 是小数（如 "1." 在 "1.5万" 中），不是标题
+    num_dot = re.match(r"\s*(\d+)[.]", line_stripped)
+    if num_dot and not line_stripped.endswith(num_dot.group(0).strip()):
+        after_dot = line_stripped[num_dot.end():num_dot.end() + 1]
+        if after_dot and after_dot.isdigit():
+            return False
+
+    # ⑧ 行结尾是中文冒号/英文冒号 → 附录标签不是章节标题
+    if line_stripped.endswith(("：", ":")):
+        return False
+
+    return True
+
+
 def _estimate_chapters(text: str) -> int:
     """Count likely chapter boundaries in the text."""
     seen_positions: set[int] = set()
@@ -56,12 +126,68 @@ def _estimate_chapters(text: str) -> int:
     for pattern in CHAPTER_PATTERNS:
         for match in pattern.finditer(text):
             pos = match.start()
-            # Avoid counting matches at the same position
+            if not _is_likely_chapter_title(text, match):
+                continue
             if not any(abs(pos - p) < 5 for p in seen_positions):
                 seen_positions.add(pos)
                 count += 1
 
     return max(1, count)
+
+
+def _extract_chapter_title(text: str, match_start: int, match_end: int) -> str:
+    """从行中提取干净的章节标题。
+
+    处理正文和标题在同一行的情况：
+    \"第三十三章摆渡人卢米安点了点头\" → \"第三十三章 摆渡人\"
+    \"第一章 穿越\" → \"第一章 穿越\"
+    """
+    line_start = text.rfind("\n", 0, match_start) + 1
+    line_end = text.find("\n", match_start)
+    if line_end == -1:
+        line_end = len(text)
+    full_line = text[line_start:line_end].strip()
+    match_text = text[match_start:match_end]
+
+    # 整行就是匹配文本本身（如 "---", "===="）或只多了装饰
+    if len(full_line) <= len(match_text) + 2:
+        return full_line if len(full_line) > len(match_text) else match_text
+
+    # 获取匹配后的内容
+    after = full_line[match_end - line_start:].strip()
+
+    # 如果匹配后内容很短（≤15字）→ 全行作为标题
+    if len(after) <= 15:
+        return full_line
+
+    # 正文和标题在同一行 → 找到句子边界截断
+    # 策略：在第3~15字间找第一个句尾标点
+    cut_pos = -1
+    for i in range(3, min(len(after), 15)):
+        if after[i] in "，。！？；：、":
+            cut_pos = i
+            break
+
+    if cut_pos > 0:
+        title = match_text + " " + after[:cut_pos]
+    else:
+        # 没有标点，取前 8 字
+        title = match_text + " " + after[:8]
+
+    return title.strip()
+
+
+_TITLE_CLEAN_PATTERNS = [
+    re.compile(r"\s*\([^)]*(?:月票|打赏|感谢|求票|求推荐)[^)]*\)$"),
+    re.compile(r"\s*（[^）]*(?:月票|打赏|感谢|求票|求推荐)[^）]*）$"),
+]
+
+
+def _clean_chapter_title(title: str) -> str:
+    """清理章节标题中的拉票/打赏后缀。"""
+    for pattern in _TITLE_CLEAN_PATTERNS:
+        title = pattern.sub("", title).strip()
+    return title
 
 
 def _parse_chapters(text: str) -> list[ChapterInfo]:
@@ -70,24 +196,20 @@ def _parse_chapters(text: str) -> list[ChapterInfo]:
 
     for pattern in CHAPTER_PATTERNS:
         for match in pattern.finditer(text):
+            if not _is_likely_chapter_title(text, match):
+                continue
+
             pos = match.start()
-            # 提取匹配位置所在行的完整内容作为章节标题
-            line_start = text.rfind("\n", 0, pos) + 1
-            line_end = text.find("\n", pos)
-            if line_end == -1:
-                line_end = len(text)
-            full_line = text[line_start:line_end].strip()
-            # 如果行内容过长（超过80字符），只取匹配部分
-            if len(full_line) > 80:
-                title = match.group().strip()
-            else:
-                title = full_line if full_line else match.group().strip()
+            title = _extract_chapter_title(text, match.start(), match.end())
+            title = _clean_chapter_title(title)
+
+            # 装饰符单独成行 → 跳过
+            if all(c in "=-*_—～~·" for c in title):
+                continue
+
             # Avoid near-duplicates (within 3 chars)
             if not any(abs(pos - b[0]) < 3 for b in boundaries):
                 boundaries.append((pos, title))
-
-    # Sort by position in file
-    boundaries.sort(key=lambda x: x[0])
 
     if not boundaries:
         return [ChapterInfo(chapter_number=1, title="（全文）", start_pos=0)]

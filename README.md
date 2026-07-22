@@ -1,4 +1,4 @@
-# QHAPI — 阅读 API
+﻿# QHAPI — 阅读 API
 
 <p>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
@@ -81,7 +81,17 @@ cp .env.example .env
 
 开发模式（热重载）：
 ```bash
+# 独立执行
 venv/bin/uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+# systemd 服务已安装
+systemctl restart qhapi
+
+  # 查看状态
+  systemctl status qhapi
+  # 查看日志
+  tail -f /var/log/qhapi/access.log
+  tail -f /var/log/qhapi/error.log
 ```
 
 生产模式（带上传超时配置）：
@@ -117,7 +127,7 @@ http://<服务器IP>:8000/docs?token=你的API_TOKEN
 | `POST /download`（远程拉取） | 请求体 `token` 字段 | 拉取 URL 文件到服务器 |
 | `POST /upload`（本地上传） | 表单 `token` 字段 | 上传本地文件到服务器 |
 | `GET /{filename}/download`（文件下载） | 查询参数 `?token=xxx` | 从服务器下载文件到本地 |
-| `GET /read`（小说阅读） | 查询参数 `?token=xxx` | 在线阅读小说 |
+| `GET /read`（文本阅读） | 查询参数 `?token=xxx` | 在线阅读文本 |
 | `GET /pages`（导航索引） | 查询参数 `?token=xxx` | 页面入口索引 |
 | `GET /files`（文件管理） | 查询参数 `?token=xxx` | 浏览器文件管理页面 |
 | `POST /{filename}/delete`（文件删除） | 查询参数 `?token=xxx` | 删除服务器上的文件 |
@@ -140,7 +150,7 @@ http://<服务器IP>:8000/docs?token=你的API_TOKEN
 | `POST` | `/api/v1/novels/upload` | 上传本地文件（需 UPLOAD_ENABLED=true） |
 | `GET` | `/api/v1/novels/upload` | 浏览器访问的上传页面 |
 | `GET` | `/api/v1/novels/pages` | 短链接索引页（所有页面入口，需 token） |
-| `GET` | `/api/v1/novels/read` | 小说阅读器（选书、选章节、翻页，需 token） |
+| `GET` | `/api/v1/novels/read` | 文本阅读器（选书、选章节、翻页，需 token） |
 | `GET` | `/api/v1/novels/files` | 文件管理页面（分页浏览、下载、删除，需 token） |
 | `GET` | `/api/v1/novels/download` | 浏览器访问的远程下载页面 |
 | `GET` | `/api/v1/novels/{filename}/download` | 下载服务器文件（需 FILE_DOWNLOAD_ENABLED=true） |
