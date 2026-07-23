@@ -63,13 +63,13 @@ read -r SEL
 [ "$SEL" = "q" ] || [ -z "$SEL" ] && echo "已取消" && exit 0
 
 # 获取选中书籍的 ID
-BOOK_ID=$(echo "$RESP" | python3 -c "
+BOOK_ID=`echo "$RESP" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
 i = int($SEL) - 1
 if 0 <= i < len(d['results']):
     print(d['results'][i]['id'])
-" 2>/dev/null)
+" 2>/dev/null`
 
 [ -z "$BOOK_ID" ] && echo "❌ 无效选择" && exit 1
 
