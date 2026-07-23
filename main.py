@@ -8,7 +8,8 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import novels, legado
+from app.routers import novels, legado, search
+from app.sources import source_a, source_b  # 注册 source 插件
 
 app = FastAPI(
     title="QHAPI",
@@ -81,6 +82,7 @@ else:
 # 注册路由
 app.include_router(novels.router)
 app.include_router(legado.router)
+app.include_router(search.router)
 
 
 @app.get("/", tags=["root"])

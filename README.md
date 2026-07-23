@@ -23,16 +23,24 @@ QHAPI 是基于 Python + FastAPI 构建的通用 API 服务。
 │   ├── config.py              # 配置管理（pydantic-settings）
 │   ├── models.py              # Pydantic 请求/响应模型
 │   ├── legado_models.py       # Legado HTTP API 兼容数据模型
+│   ├── sources/               # 搜索源插件体系
+│   │   ├── __init__.py        # 基类 + 注册表
+│   │   ├── source_a.py        # 源A
+│   │   └── source_b.py        # 源B（自动解压）
 │   ├── routers/
 │   │   ├── novels.py          # 阅读 API 路由
+│   │   ├── search.py          # 搜索 API + 搜索页面
 │   │   └── legado.py          # Legado HTTP API 兼容路由
 │   ├── services/
 │   │   ├── file_service.py    # 文件扫描、章节解析、文本提取
 │   │   ├── download_service.py# URL 下载、防同名覆盖
 │   │   └── legado_service.py  # Legado 数据映射服务
 │   └── utils/
-│       └── encoding.py        # chardet 编码检测封装
+│       ├── encoding.py        # chardet 编码检测封装
+│       └── pinyin_util.py     # 中文转拼音工具
 ├── novels/                    # 文本文件存放目录
+├── scripts/
+│   └── qhapi_book.sh          # 命令行搜索下载脚本
 ├── main.py                    # 应用入口
 ├── requirements.txt           # Python 依赖
 ├── .env.example               # 配置模板
@@ -70,6 +78,12 @@ cp .env.example .env
 | `UPLOAD_TIMEOUT_SECONDS` | `300` | 上传超时时间（秒） |
 | `UPLOAD_CHUNK_SIZE_KB` | `512` | 分片上传每片大小（KB） |
 | `FILE_DOWNLOAD_ENABLED` | `false` | 是否启用文件下载接口 |
+| `FILE_RENAME_PINYIN` | `false` | 下载/上传后自动转拼音文件名 |
+| `SOURCE_A_ENABLED` | `false` | 是否启用源A |
+| `SOURCE_A_URL` | `""` | 源A URL |
+| `SOURCE_B_ENABLED` | `false` | 是否启用源B |
+| `SOURCE_B_URL` | `""` | 源B URL |
+| `SOURCE_B_PATH` | `"/"` | 源B API 路径 |
 | `MAX_FILE_SIZE_MB` | `50` | 单个文件大小上限（MB） |
 | `DOWNLOAD_TIMEOUT_SECONDS` | `30` | 远程拉取下载超时（秒） |
 
@@ -155,6 +169,10 @@ http://<服务器IP>:8000/docs?token=你的API_TOKEN
 | `GET` | `/api/v1/novels/download` | 浏览器访问的远程下载页面 |
 | `GET` | `/api/v1/novels/{filename}/download` | 下载服务器文件（需 FILE_DOWNLOAD_ENABLED=true） |
 | `POST` | `/api/v1/novels/{filename}/delete` | 删除服务器文件（需 FILE_DOWNLOAD_ENABLED=true） |
+| `GET` | `/api/v1/sources` | 列出可用搜索源 |
+| `GET` | `/api/v1/search` | 搜索书籍（?q=关键词&source=txt/rar/auto） |
+| `GET` | `/api/v1/search-page` | 浏览器搜索页面（搜索框+结果列表+一键下载） |
+| `GET` | `/api/v1/book-detail` | 获取书籍详情和下载链接 |
 | `GET` | `/health` | 健康检查 |
 
 > **Token 验证说明**：如果配置了 `API_TOKEN`，上传/下载/远程拉取接口需传入匹配的 `token`（未配置或为空则跳过验证）。默认令牌首次启动时会自动生成并输出到控制台。
@@ -206,6 +224,21 @@ curl "http://localhost:8000/api/v1/novels/示例_江南烟雨.txt/chapters/2"
 **从第 2 章第 50 字起取 100 字（独立接口）：**
 ```bash
 curl "http://localhost:8000/api/v1/novels/示例_江南烟雨.txt/chapters/2?start=50&offset=100"
+```
+
+**搜索书籍（通过搜索源）：**
+```bash
+# 列出可用搜索源
+curl http://localhost:8000/api/v1/sources
+
+# 搜索
+curl "http://localhost:8000/api/v1/search?q=关键词&source=txt"
+
+# 浏览器搜索页面
+# http://<服务器IP>:8000/api/v1/search-page
+
+# CLI 搜索下载
+bash scripts/qhapi_book.sh "关键词"
 ```
 
 **下载文件（需开启 REMOTE_DOWNLOAD_ENABLED=true）：**
