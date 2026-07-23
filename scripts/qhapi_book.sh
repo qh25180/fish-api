@@ -14,6 +14,11 @@
 BASE="${QHAPI_BASE:-http://localhost:8000}"
 TOKEN="${QHAPI_TOKEN:-}"
 
+# 如果没有设置环境变量，尝试从 .env 读取
+if [ -z "$TOKEN" ] && [ -f "$(dirname "$0")/../.env" ]; then
+    TOKEN=$(grep "^API_TOKEN=" "$(dirname "$0")/../.env" | cut -d= -f2 | head -1)
+fi
+
 usage() {
     echo "用法: $0 <关键词> [--source a|rar|auto]"
     echo "环境变量: QHAPI_BASE, QHAPI_TOKEN"
