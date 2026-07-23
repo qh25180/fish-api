@@ -176,10 +176,11 @@ async def pages_index(
 
     t = quote(token, safe="")
     pages = [
-        ("📖 文本阅读", "在线阅读服务器上的文本", f"/api/v1/novels/read?token={t}"),
-        ("📤 文件上传", "上传本地文件到服务器，支持分片上传", f"/api/v1/novels/upload?token={t}"),
-        ("📥 远程下载", "从 URL 拉取文件到服务器", f"/api/v1/novels/download?token={t}"),
-        ("📁 文件管理", "浏览、下载、删除服务器上的文件", f"/api/v1/novels/files?token={t}"),
+        ("[文本阅读]", "在线阅读服务器上的文本", f"/api/v1/novels/read?token={t}"),
+        ("[书籍搜索]", "搜索并下载书籍", f"/api/v1/search-page?token={t}"),
+        ("[文件上传]", "上传本地文件到服务器，支持分片上传", f"/api/v1/novels/upload?token={t}"),
+        ("[远程下载]", "从 URL 拉取文件到服务器", f"/api/v1/novels/download?token={t}"),
+        ("[文件管理]", "浏览、下载、删除服务器上的文件", f"/api/v1/novels/files?token={t}"),
     ]
 
     cards_html = ""
@@ -250,7 +251,7 @@ async def upload_page(
 </head>
 <body>
 {back_html}
-<h2>📤 文件上传</h2>
+<h2>[文件上传]</h2>
 {msg_html}
 <form id="uploadForm">
   <label for="file">选择文件</label>
@@ -640,7 +641,7 @@ async def files_page(
 <style>body{{font-family:sans-serif;max-width:600px;margin:40px auto;padding:0 20px;}}
 .msg{{padding:12px;border-radius:4px;margin-bottom:16px;}}
 .msg.error{{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb;}}</style></head>
-<body><h2>📁 文件管理</h2>
+<body><h2>[文件管理]</h2>
 <div class="msg error">❌ 需要有效的访问口令</div>
 <form method="get" action="/api/v1/novels/files">
 <input type="text" name="token" placeholder="请输入访问口令" style="width:100%;padding:8px;box-sizing:border-box;">
@@ -750,7 +751,7 @@ async def files_page(
 </head>
 <body>
 {back_html}
-<h2>📁 文件管理</h2>
+<h2>[文件管理]</h2>
 {msg_html}
 <table>
 <thead>
@@ -1036,7 +1037,7 @@ async def download_page(
 </head>
 <body>
 {back_html}
-<h2>📥 远程下载</h2>
+<h2>[远程下载]</h2>
 {msg_html}
 <form action="/api/v1/novels/download" method="post">
   <label for="url">下载链接</label>
@@ -1241,7 +1242,7 @@ async def read_page(
 <body>
 <div class="container">
   <div class="header">
-    <h1 id="headerTitle">📖 文本阅读</h1>
+    <h1 id="headerTitle">[文本阅读]</h1>
     <div style="display:flex;align-items:center;gap:12px;">
       <span class="toggle-chapters" id="toggleChapters" onclick="toggleChapterList()" style="display:none">📑 目录</span>
       <a href="/api/v1/novels/pages?token={t}" style="color:#007acc;text-decoration:none;font-size:14px;">← 返回索引</a>

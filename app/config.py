@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     upload_enabled: bool = False
     upload_chunk_size_kb: int = 512
     file_download_enabled: bool = False
+    file_rename_pinyin: bool = False
+    source_a_enabled: bool = False
+    source_a_url: str = ""
+    source_a_name: str = "示例源A"
+    source_b_enabled: bool = False
+    source_b_url: str = ""
+    source_b_path: str = "/"
+    source_b_name: str = "示例源B"
 
     @property
     def text_file_extensions_list(self) -> List[str]:
