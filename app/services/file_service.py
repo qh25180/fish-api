@@ -9,6 +9,7 @@ from typing import Optional
 
 from app.config import settings
 from app.utils.encoding import read_file_with_encoding, detect_encoding
+from app.utils.meta_util import extract_meta
 from app.models import NovelInfo, ChapterInfo
 
 # ─── Chapter Detection Patterns (ordered by priority) ─────────
@@ -225,16 +226,18 @@ def _parse_chapters(text: str) -> list[ChapterInfo]:
     return chapters
 
 
-def _estimate_chapters_from_head(file_path: Path) -> int:
-    """仅读取文件前 64KB 估算章节数，避免大文件全文读取。"""
+def _estimate_chapters_and_author_from_head(file_path: Path) -> tuple[int, str]:
+    """仅读取文件前 64KB 估算章节数并提取作者，避免大文件全文读取。"""
     try:
         with open(file_path, "rb") as f:
             raw = f.read(65536)
         detected = detect_encoding(str(file_path))
         text = raw.decode(detected, errors="replace")
-        return _estimate_chapters(text)
+        ch = _estimate_chapters(text)
+        meta = extract_meta(file_path.name, text[:4096])
+        return ch, meta["author"]
     except Exception:
-        return 1
+        return 1, "未知作者"
 
 
 # ─── Cache（LRU 缓存，避免同一文件反复读取+解析）───────────────
@@ -299,7 +302,7 @@ def list_novel_files(
                 continue
 
         # Estimate chapters（仅读文件头 64KB 以提升性能）
-        est_chapters = _estimate_chapters_from_head(f)
+        est_chapters, author = _estimate_chapters_and_author_from_head(f)
 
         stat = f.stat()
         files.append(NovelInfo(
@@ -307,6 +310,7 @@ def list_novel_files(
             file_size=stat.st_size,
             modified_time=datetime.datetime.fromtimestamp(stat.st_mtime),
             estimated_chapters=est_chapters,
+            author=author,
         ))
 
     # Sort by filename

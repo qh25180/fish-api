@@ -9,6 +9,7 @@ from typing import Any
 
 from app.config import settings
 from app.sources import BaseSource, register
+from app.utils.meta_util import extract_meta
 
 
 @register("b")
@@ -52,9 +53,11 @@ class SourceB(BaseSource):
                 seen.add(name)
                 size = item.get("size", 0)
                 size_hint = f"{size / 1024 / 1024:.1f}MB" if size else ""
+                meta = extract_meta(name)
                 results.append({
                     "id": name,
-                    "title": name.replace(".rar", "").replace(".zip", ""),
+                    "title": meta["title"],
+                    "author": meta["author"],
                     "source": "b",
                     "size_hint": size_hint,
                     "file_name": name,

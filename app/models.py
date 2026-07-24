@@ -13,6 +13,7 @@ class NovelInfo(BaseModel):
     file_size: int
     modified_time: datetime
     estimated_chapters: int
+    author: str = "未知作者"
 
 
 class NovelListResponse(BaseModel):
