@@ -48,6 +48,7 @@ class SourceA(BaseSource):
                 results.append({
                     "id": bid,
                     "title": f"\u300a{title}\u300b",
+                    "author": "\u672a\u77e5\u4f5c\u8005",
                     "source": "a",
                 })
         return results[:30]
@@ -55,6 +56,7 @@ class SourceA(BaseSource):
     def get_detail(self, book_id: str) -> dict[str, Any]:
         html_content = self._fetch(self._detail_url(book_id))
         title = f"ID:{book_id}"
+        author = "未知作者"
         download_url = ""
         if html_content:
             urls = re.findall(r'https://download\.[^/"\']+[^"\'<>]+', html_content)
@@ -63,7 +65,11 @@ class SourceA(BaseSource):
             m = re.search(r'\u300a([^\u300b]+)\u300b', html_content)
             if m:
                 title = f"\u300a{m.group(1)}\u300b"
-        return {"id": book_id, "title": title, "download_url": download_url}
+            # 提取作者
+            author_match = re.search(r"作者[：:]\s*(.+?)[\r\n]", html_content)
+            if author_match:
+                author = author_match.group(1).strip().rstrip("，；,;")
+        return {"id": book_id, "title": title, "author": author, "download_url": download_url}
 
     def get_download_url(self, book_id: str) -> str:
         return self.get_detail(book_id).get("download_url", "")

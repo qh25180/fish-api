@@ -668,7 +668,7 @@ async def files_page(
     hidden_books = _load_hidden_books()
     rows_html = ""
     if not files:
-        rows_html = '<tr><td colspan="4" style="text-align:center;padding:24px;color:#666;">暂无文件</td></tr>'
+        rows_html = '<tr><td colspan="5" style="text-align:center;padding:24px;color:#666;">暂无文件</td></tr>'
     else:
         for f in files:
             safe_fn = html_mod.escape(f.filename)
@@ -680,9 +680,11 @@ async def files_page(
             row_class = ' class="hidden-row"' if is_hidden else ''
             hide_btn_text = "显示" if is_hidden else "隐藏"
             hide_btn_class = "btn-unhide" if is_hidden else "btn-hide"
+            author_escaped = html_mod.escape(f.author)
             rows_html += f"""<tr{row_class}>
 <td>{safe_fn}</td>
 <td>{_format_file_size(f.file_size)}</td>
+<td>{author_escaped}<br><a href="#" onclick="event.preventDefault();var a=document.getElementById('author-{encoded_fn}');a.style.display=a.style.display==='none'?'block':'none';return false;" style="font-size:12px;color:#007acc;">修改</a></td>
 <td>{mod_time}</td>
 <td class="actions">
 <a href="{dl_url}" class="btn-download" download>下载</a>
@@ -695,6 +697,10 @@ async def files_page(
 <button type="button" class="btn-rename" onclick="var f=document.getElementById('rename-{encoded_fn}');f.style.display=f.style.display==='block'?'none':'block'">重命名</button>
 <form method="post" action="/api/v1/novels/{encoded_fn}/rename?token={quote(token or '', safe='')}" class="rename-form" id="rename-{encoded_fn}">
 <input type="text" name="new_name" value="{safe_fn}" required>
+<button type="submit" style="background:#007acc;color:#fff;border:none;border-radius:4px;">确认</button>
+</form>
+<form method="post" action="/api/v1/novels/{encoded_fn}/author?token={quote(token or '', safe='')}" class="rename-form" id="author-{encoded_fn}" style="display:none;">
+<input type="text" name="new_author" value="{author_escaped}" required style="width:120px;">
 <button type="submit" style="background:#007acc;color:#fff;border:none;border-radius:4px;">确认</button>
 </form>
 </td>
@@ -755,7 +761,7 @@ async def files_page(
 {msg_html}
 <table>
 <thead>
-<tr><th>文件名</th><th>大小</th><th>修改时间</th><th>操作</th></tr>
+<tr><th>文件名</th><th>大小</th><th>作者</th><th>修改时间</th><th>操作</th></tr>
 </thead>
 <tbody>
 {rows_html}
@@ -998,6 +1004,52 @@ async def rename_book(
         )
 
     return {"success": True, "old_filename": filename, "new_filename": safe_new_name}
+
+
+# ─── 修改作者 ───────────────────────────────────────
+
+@router.post("/{filename}/author")
+async def update_author(
+    filename: str,
+    new_author: str = Form(...),
+    token: str | None = Query(None),
+    request: Request = None,
+):
+    """修改文件的作者信息。"""
+    accept = request.headers.get("accept", "") if request else ""
+    is_browser = "text/html" in accept
+
+    if settings.api_token:
+        if not token or not secrets.compare_digest(token, settings.api_token):
+            err_msg = "无效的访问口令"
+            if is_browser:
+                return RedirectResponse(url=f"/api/v1/novels/files?token={quote(token or '', safe='')}&error={quote(err_msg)}", status_code=303)
+            raise HTTPException(status_code=403, detail=err_msg)
+
+    stem = Path(filename).stem
+    progress_path = settings.text_files_dir / ".legado_progress.json"
+    try:
+        import json
+        progress = json.loads(progress_path.read_text(encoding="utf-8")) if progress_path.exists() else {}
+        if stem not in progress:
+            progress[stem] = {}
+        progress[stem]["author"] = new_author.strip()
+        tmp_path = progress_path.with_suffix(".tmp")
+        tmp_path.write_text(json.dumps(progress, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp_path.replace(progress_path)
+    except Exception as e:
+        err_msg = f"保存作者信息失败: {e}"
+        if is_browser:
+            return RedirectResponse(url=f"/api/v1/novels/files?token={quote(token or '', safe='')}&error={quote(err_msg)}", status_code=303)
+        raise HTTPException(status_code=500, detail=err_msg)
+
+    if is_browser:
+        return RedirectResponse(
+            url=f"/api/v1/novels/files?token={quote(token or '', safe='')}&success={quote(f'已更新作者: {filename} → {new_author}')}",
+            status_code=303,
+        )
+
+    return {"success": True, "filename": filename, "author": new_author.strip()}
 
 
 # ─── 远程下载页面 ───────────────────────────────────

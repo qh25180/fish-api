@@ -7,10 +7,10 @@ from app.config import settings
 
 
 def filename_to_pinyin(original_name: str) -> str:
-    """将中文文件名转为 PascalCase 拼音。
+    """将中文文件名转为 PascalCase 拼音，自动分离作者信息。
 
     示例:
-        《示例文档》（整理版）.txt → ShiLiWenDang.txt
+        《凡人修仙传》（校对版全本）作者：忘语.txt → FanRenXiuXianChuan.txt
         示例.txt → ShiLi.txt
     """
     if not settings.file_rename_pinyin:
@@ -23,12 +23,17 @@ def filename_to_pinyin(original_name: str) -> str:
     if not name:
         return original_name
 
-    # 提取书名号内的内容
-    m = re.search(r'《([^》]+)》', name)
+    # 提取书名号内的内容（优先）
+    m = re.search(r'\u300a([^\u300b]+)\u300b', name)
     if m:
         name = m.group(1)
+    else:
+        # 尝试用 extract_meta 分离作者
+        from app.utils.meta_util import extract_meta
+        meta = extract_meta(original_name)
+        name = meta["title"]
 
-    # 清理无关字符（保留中文字符）
+    # 清理无关字符（保留中文字符和字母数字）
     name = re.sub(r'[^\u4e00-\u9fff\w]', '', name)
 
     if not name:

@@ -129,9 +129,11 @@ function search() {{
     d.results.forEach(function(item) {{
       var size = item.size_hint ? ' (' + item.size_hint + ')' : '';
       var srcName = item.source_title || item.source;
+      var author = item.author || '';
+      var authorHtml = author ? ' · ' + author : '';
       html += '<div class="result">' +
         '<div><div class="result-title">' + item.title + '</div>' +
-        '<div class="result-size">' + srcName + size + '</div></div>' +
+        '<div class="result-size">' + srcName + authorHtml + size + '</div></div>' +
         '<button class="btn" onclick="downloadBook(\\'' + item.id + '\\',\\'' + item.source + '\\',this)">下载</button>' +
         '</div>';
     }});
@@ -185,11 +187,21 @@ async def download_book(
     dl_dir = settings.text_files_dir
     dl_dir.mkdir(parents=True, exist_ok=True)
 
+    # 获取书籍详情以提取作者
+    detail = s.get_detail(book_id) if source == "a" else {"author": "未知作者"}
+    detected_author = detail.get("author", "未知作者")
+
     try:
         if source == "b":
             # 源B需要下载+解压
             result_path = s.download_and_extract(book_id, str(dl_dir))
             if result_path:
+                # 从文件名提取作者
+                from app.utils.meta_util import extract_meta
+                meta = extract_meta(os.path.basename(result_path))
+                detected_author = meta["author"]
+                # 保存作者到进度文件
+                _save_author_to_progress(os.path.basename(result_path), detected_author)
                 return {"success": True, "filename": os.path.basename(result_path)}
             return {"success": False, "error": "下载或解压失败"}
 
@@ -219,9 +231,31 @@ async def download_book(
             with open(filepath, "wb") as f:
                 f.write(data)
 
+            # 保存作者
+            _save_author_to_progress(filepath.name, detected_author)
+
             return {"success": True, "filename": filepath.name,
                     "size": len(data), "renamed": pinyin_name != filename}
 
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+def _save_author_to_progress(filename: str, author: str):
+    """保存作者信息到进度文件。"""
+    if not author or author == "未知作者":
+        return
+    stem = os.path.splitext(filename)[0]
+    import json
+    progress_path = settings.text_files_dir / ".legado_progress.json"
+    try:
+        progress = json.loads(progress_path.read_text(encoding="utf-8")) if progress_path.exists() else {}
+        if stem not in progress:
+            progress[stem] = {}
+        progress[stem]["author"] = author
+        tmp = progress_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(progress, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(progress_path)
+    except Exception:
+        pass
 

@@ -80,9 +80,35 @@ def _file_to_legado_book(filename: str, total_chapters: int) -> LegadoBook:
     progress = _load_progress()
     book_progress = progress.get(name, {})
 
+    # 尝试从文件名 + 文件内容提取作者
+    from app.utils.meta_util import extract_meta
+    from app.utils.encoding import detect_encoding
+    meta = extract_meta(filename)
+    if meta["author"] == "未知作者":
+        # 文件名提取失败 → 读文件头
+        try:
+            file_path = settings.text_files_dir / filename
+            if file_path.exists():
+                raw = file_path.read_bytes()[:4096]
+                enc = detect_encoding(str(file_path))
+                head = raw.decode(enc, errors="replace")
+                meta = extract_meta(filename, head)
+        except Exception:
+            pass
+
+    author = meta["author"]
+    # 已保存的真实作者优先，未知作者则用提取到的
+    saved_author = book_progress.get("author")
+    if saved_author and saved_author != "未知作者":
+        author = saved_author
+    elif author and author != "未知作者":
+        # 提取到真实作者，存到进度文件中
+        progress[name] = {**book_progress, "author": author}
+        _save_progress(progress)
+
     return LegadoBook(
         name=name,
-        author="未知作者",
+        author=author,
         bookUrl=filename,
         totalChapterNum=total_chapters,
         durChapterTitle=book_progress.get("durChapterTitle") or first_chapter_title,
@@ -141,6 +167,7 @@ def save_book_progress(
         "durChapterPos": dur_chapter_pos,
         "durChapterTitle": dur_chapter_title,
         "durChapterTime": dur_chapter_time or int(time.time() * 1000),
+        "author": author,
     }
     _save_progress(progress)
 
