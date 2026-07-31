@@ -1230,47 +1230,77 @@ async def download_file(
 _READER_STYLE = """
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: "Noto Serif SC", "Source Han Serif CN", serif; background: #f5f1eb; color: #333; }
-  .container { max-width: 800px; margin: 0 auto; padding: 20px; }
-  .header { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #ddd; margin-bottom: 20px; }
-  .header h1 { font-size: 18px; }
-  .nav-link { color: #007acc; text-decoration: none; font-size: 14px; }
-  .nav-link:hover { text-decoration: underline; }
+  html, body { height: 100%; overflow: hidden; }
+  body { font-family: var(--font-family, "Noto Serif SC", serif); background: var(--bg-color, #f5f1eb); color: var(--text-color, #333); }
+  .container { max-width: 900px; margin: 0 auto; padding: 10px 20px; height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+  .header { display: flex; align-items: center; padding: 8px 0; border-bottom: 1px solid #ddd; gap: 8px; flex-shrink: 0; }
+  .header .book-name { flex: 1; font-size: 16px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .header .page-stat { font-size: 12px; color: #999; white-space: nowrap; margin-right: 8px; }
+  .header .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid #ccc; border-radius: 6px; background: transparent; cursor: pointer; font-size: 16px; color: #555; transition: background 0.15s; text-decoration: none; flex-shrink: 0; }
+  .header .icon-btn:hover { background: #e9ecef; }
 
   /* 选书列表 */
-  .book-list { list-style: none; }
-  .book-item { padding: 14px 16px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; cursor: pointer; background: #fff; transition: background 0.15s; }
+  .book-list { list-style: none; margin-top: 16px; }
+  .book-item { padding: 14px 16px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; cursor: pointer; background: var(--card-bg, #fff); transition: background 0.15s; }
   .book-item:hover { background: #e9ecef; }
-  .book-name { font-size: 16px; font-weight: bold; }
+  .book-name-lg { font-size: 16px; font-weight: bold; }
   .book-info { font-size: 13px; color: #888; margin-top: 4px; }
 
   /* 章节列表 */
-  .chapter-list { max-height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; background: #fff; margin-bottom: 20px; }
+  .chapter-list { max-height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; background: var(--card-bg, #fff); margin-bottom: 12px; flex-shrink: 0; }
   .chapter-item { padding: 10px 16px; border-bottom: 1px solid #eee; cursor: pointer; font-size: 14px; }
   .chapter-item:last-child { border-bottom: none; }
   .chapter-item:hover { background: #e9ecef; }
   .chapter-item.active { background: #007acc; color: #fff; }
-
-  /* 阅读区域 */
-  .reader { background: #fff; border-radius: 6px; padding: 30px 40px; min-height: 400px; line-height: 1.9; font-size: 17px; white-space: pre-wrap; word-wrap: break-word; }
-  .reader-title { font-size: 20px; font-weight: bold; text-align: center; margin-bottom: 24px; color: #555; }
-
-  /* 分页控件 */
-  .pagination-bar { display: flex; justify-content: center; align-items: center; gap: 16px; margin-top: 20px; padding: 16px 0; }
-  .pagination-bar button { padding: 8px 20px; border: 1px solid #007acc; background: #fff; color: #007acc; border-radius: 4px; cursor: pointer; font-size: 14px; }
-  .pagination-bar button:hover { background: #007acc; color: #fff; }
-  .pagination-bar button:disabled { border-color: #ccc; color: #ccc; cursor: not-allowed; background: #fff; }
-  .page-info { font-size: 14px; color: #666; }
-
-  /* 章节切换 */
-  .chapter-bar { display: flex; justify-content: space-between; margin-top: 16px; }
-  .toggle-chapters { display: inline-block; padding: 6px 14px; background: #6c757d; color: #fff; border-radius: 4px; cursor: pointer; font-size: 13px; margin-right: 12px; vertical-align: middle; }
-  .toggle-chapters:hover { background: #545b62; }
   .chapter-list.collapsed { display: none; }
 
-  /* 状态 */
-  .status { text-align: center; color: #888; padding: 40px; font-size: 14px; }
+  /* 阅读区域 — 自适应无滚动 */
+  .reader-wrap { flex: 1; position: relative; display: flex; align-items: stretch; min-height: 0; }
+  .reader { background: var(--card-bg, #fff); border-radius: 6px; padding: 20px 30px; flex: 1; display: flex; flex-direction: column; overflow: hidden; margin: 8px 0; }
+  .reader-title { font-size: calc(var(--font-size, 17px) + 4px); font-weight: bold; text-align: center; margin-bottom: 16px; color: #555; flex-shrink: 0; }
+  .reader-text { flex: 1; overflow: hidden; font-size: var(--font-size, 17px); line-height: var(--line-height, 1.9); white-space: pre-wrap; word-wrap: break-word; }
+
+  /* 导航按钮悬浮两侧 */
+  .nav-left, .nav-right { position: absolute; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 10; }
+  .nav-left { left: -52px; }
+  .nav-right { right: -52px; }
+  .nav-btn { padding: 6px 10px; border: 1px solid var(--text-color, #333); background: var(--card-bg, #fff); color: var(--text-color, #333); border-radius: 6px; cursor: pointer; font-size: 12px; white-space: nowrap; opacity: 0.55; transition: opacity 0.2s; }
+  .nav-btn:hover { opacity: 1; }
+  .nav-btn:disabled { opacity: 0.2; cursor: not-allowed; }
+
+  /* 设置弹窗 */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000; align-items: center; justify-content: center; }
+  .modal-overlay.show { display: flex; }
+  .modal { background: var(--card-bg, #fff); color: var(--text-color, #333); border-radius: 12px; padding: 24px; width: 340px; max-width: 90vw; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+  .modal h3 { margin-bottom: 16px; font-size: 16px; }
+  .modal label { display: block; margin: 12px 0 4px; font-size: 13px; color: #666; }
+  .modal input[type=range] { width: 100%; }
+  .modal .range-val { text-align: center; font-size: 16px; margin-top: 4px; }
+  .color-presets { display: flex; gap: 8px; margin: 8px 0; }
+  .color-presets button { width: 40px; height: 40px; border-radius: 8px; border: 2px solid transparent; cursor: pointer; }
+  .color-presets button.active { border-color: #007acc; }
+  .modal .btn-confirm { display: block; width: 100%; margin-top: 16px; padding: 10px; background: #007acc; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 15px; }
+  .modal .btn-confirm:hover { background: #005999; }
+
+  /* 底部留白 */
+  .footer-spacer { flex-shrink: 0; height: 20px; }
+
   .loading { text-align: center; padding: 40px; color: #888; }
+  .status { text-align: center; color: #888; padding: 40px; font-size: 14px; }
+
+  @media (max-width: 720px) {
+    .container { padding: 8px 10px; }
+    .nav-left { left: 8px; }
+    .nav-right { right: 8px; }
+    /* 移动端：纯图标小圆钮，半透明减少遮挡 */
+    .nav-btn { width: 40px; height: 40px; padding: 0; border: none; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(128, 128, 128, 0.4); color: #fff; font-size: 15px; backdrop-filter: blur(2px); }
+    .nav-btn .nav-txt { display: none; }
+    .nav-btn:active { background: rgba(0, 122, 204, 0.7); }
+    /* 阅读卡片左右缩进，给两侧悬浮按钮留出专用空间 */
+    .reader { padding: 12px 16px; margin: 8px 46px; }
+  }
 </style>
 """
 
@@ -1287,42 +1317,56 @@ async def read_page(
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>文本阅读</title>
 {_READER_STYLE}
 </head>
 <body>
 <div class="container">
+  <!-- 顶部栏 -->
   <div class="header">
-    <h1 id="headerTitle">[文本阅读]</h1>
-    <div style="display:flex;align-items:center;gap:12px;">
-      <span class="toggle-chapters" id="toggleChapters" onclick="toggleChapterList()" style="display:none">📑 目录</span>
-      <a href="/api/v1/novels/pages?token={t}" style="color:#007acc;text-decoration:none;font-size:14px;">← 返回索引</a>
-    </div>
+    <span class="book-name" id="headerTitle">[文本阅读]</span>
+    <span class="page-stat" id="pageInfo"></span>
+    <button class="icon-btn" id="btnSettings" onclick="showSettings()" title="阅读设置">⚙️</button>
+    <button class="icon-btn" id="btnChapters" onclick="toggleChapterList()" title="章节目录" style="display:none">📑</button>
+    <button class="icon-btn" id="btnBack" onclick="backToBooks()" title="返回书架">✕</button>
   </div>
 
   <!-- 选书 -->
-  <div id="bookView">
+  <div id="bookView" style="flex:1;overflow-y:auto;">
     <div class="loading" id="bookLoading">加载书架...</div>
     <ul class="book-list" id="bookList" style="display:none"></ul>
   </div>
 
-  <!-- 章节列表 + 阅读区 -->
-  <div id="readerView" style="display:none">
+  <!-- 阅读区 -->
+  <div id="readerView" style="display:none;flex:1;flex-direction:column;min-height:0;">
     <div class="chapter-list collapsed" id="chapterList"></div>
-    <div class="reader" id="readerContent">
-      <div class="reader-title" id="readerTitle"></div>
-      <div id="readerText"></div>
+    <div class="reader-wrap" style="flex:1;position:relative;">
+      <div class="nav-left">
+        <button class="nav-btn" id="btnPrevPage" onclick="prevPage()" disabled>◀ <span class="nav-txt">上一页</span></button>
+      </div>
+      <div class="reader">
+        <div class="reader-title" id="readerTitle"></div>
+        <div class="reader-text" id="readerText"></div>
+      </div>
+      <div class="nav-right">
+        <button class="nav-btn" id="btnNextPage" onclick="nextPage()" disabled><span class="nav-txt">下一页</span> ▶</button>
+      </div>
     </div>
-    <div class="pagination-bar">
-      <button id="btnPrevPage" onclick="prevPage()">上一页</button>
-      <span class="page-info" id="pageInfo"></span>
-      <button id="btnNextPage" onclick="nextPage()">下一页</button>
-    </div>
-    <div class="chapter-bar">
-      <button id="btnPrevCh" onclick="prevChapter()">上一章</button>
-      <button id="btnNextCh" onclick="nextChapter()">下一章</button>
-    </div>
+  </div>
+  <div class="footer-spacer"></div>
+</div>
+
+<!-- 设置弹窗 -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal">
+    <h3>阅读设置</h3>
+    <label for="fontSizeSlider">字号</label>
+    <input type="range" id="fontSizeSlider" min="12" max="32" value="17">
+    <div class="range-val" id="fontSizeVal">17px</div>
+    <label>背景</label>
+    <div class="color-presets" id="colorPresets"></div>
+    <button class="btn-confirm" onclick="applySettings()">确定</button>
   </div>
 </div>
 
@@ -1330,17 +1374,132 @@ async def read_page(
 (function() {{
   const BASE = '/api/v1/novels';
   const TOKEN = '{t}';
-  const SNIPPET_LEN = 800;
 
+  // ─── 设置 ──────────────────────────
+  const THEMES = [
+    {{ name: '护眼黄', bg: '#f5f1eb', card: '#fff', text: '#333' }},
+    {{ name: '纯白',   bg: '#ffffff', card: '#fff', text: '#333' }},
+    {{ name: '暗黑',   bg: '#1a1a2e', card: '#16213e', text: '#e0e0e0' }},
+    {{ name: '羊皮纸', bg: '#f4ecd8', card: '#faf3e6', text: '#4a3b32' }},
+    {{ name: '墨绿',   bg: '#d4e6d8', card: '#e8f0e8', text: '#2d3a3a' }},
+  ];
+  let settings = JSON.parse(localStorage.getItem('qhapi_reader_settings') || '{{}}');
+  if (!settings.fontSize) settings = {{ fontSize: 17, themeIndex: 0 }};
+  let savedSettings = null;
+  let sliderTimer = null;
+  applyTheme(settings);
+
+  function applyTheme(s, save = true) {{
+    const t = THEMES[s.themeIndex] || THEMES[0];
+    document.documentElement.style.setProperty('--font-size', s.fontSize + 'px');
+    document.documentElement.style.setProperty('--line-height', (s.fontSize > 22 ? 1.7 : 1.9));
+    document.documentElement.style.setProperty('--bg-color', t.bg);
+    document.documentElement.style.setProperty('--card-bg', t.card);
+    document.documentElement.style.setProperty('--text-color', t.text);
+    if (save) localStorage.setItem('qhapi_reader_settings', JSON.stringify(s));
+  }}
+
+  // 等浏览器应用新样式后再重新分页
+  function reflowAfterTheme() {{
+    if (!chapterText) return;
+    requestAnimationFrame(() => reflowPage());
+  }}
+
+  window.showSettings = function() {{
+    savedSettings = JSON.parse(JSON.stringify(settings));
+    const modal = document.getElementById('settingsModal');
+    modal.classList.add('show');
+    const slider = document.getElementById('fontSizeSlider');
+    slider.value = settings.fontSize;
+    document.getElementById('fontSizeVal').textContent = settings.fontSize + 'px';
+    const presets = document.getElementById('colorPresets');
+    presets.innerHTML = '';
+    THEMES.forEach((t, i) => {{
+      const btn = document.createElement('button');
+      btn.style.background = t.bg;
+      btn.style.borderColor = t.bg;
+      if (i === settings.themeIndex) btn.classList.add('active');
+      btn.title = t.name;
+      btn.onclick = () => {{
+        presets.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        settings.themeIndex = i;
+        applyTheme(settings, false); // 实时预览背景色
+      }};
+      presets.appendChild(btn);
+    }});
+    slider.oninput = function() {{
+      document.getElementById('fontSizeVal').textContent = this.value + 'px';
+      settings.fontSize = parseInt(this.value);
+      applyTheme(settings, false); // 实时预览字号
+      // 防抖：停止拖动后自动重新分页
+      clearTimeout(sliderTimer);
+      sliderTimer = setTimeout(reflowAfterTheme, 120);
+    }};
+  }};
+
+  window.applySettings = function() {{
+    document.getElementById('settingsModal').classList.remove('show');
+    applyTheme(settings); // 保存设置
+    reflowAfterTheme();
+  }};
+
+  // 点击遮罩 = 取消，恢复原设置
+  document.getElementById('settingsModal').onclick = function(e) {{
+    if (e.target === this) {{
+      settings = savedSettings || settings;
+      applyTheme(settings);
+      this.classList.remove('show');
+      reflowAfterTheme();
+    }}
+  }};
+
+  // ─── 分页计算（实测，保证不溢出） ──────
+  function findMaxFit(text, el) {{
+    // 二分查找：在当前视口内能完整显示的最长前缀
+    let lo = 1, hi = text.length, best = 0;
+    while (lo <= hi) {{
+      const mid = (lo + hi) >> 1;
+      el.textContent = text.substring(0, mid);
+      if (el.scrollHeight <= el.clientHeight + 1) {{
+        best = mid; lo = mid + 1;
+      }} else {{
+        hi = mid - 1;
+      }}
+    }}
+    return Math.max(1, best);
+  }}
+
+  // 构建页面历史：从章节开头逐页测量，直到覆盖恢复位置
+  function buildPageHistory() {{
+    const el = document.getElementById('readerText');
+    if (!el || !el.clientHeight) {{ pageHistory = [pageOffset]; return; }}
+    const target = Math.min(pageOffset, Math.max(0, chapterText.length - 1));
+    const hist = [0];
+    if (target > 0) {{
+      let pos = 0;
+      while (pos < target) {{
+        const n = findMaxFit(chapterText.substring(pos), el);
+        if (n <= 0) break;
+        pos += n;
+        if (pos >= target) break; // 恢复位置落在本页内，不再记录下一页起点
+        hist.push(pos);
+      }}
+    }}
+    pageHistory = hist;
+    // 恢复位置所在页的起点（该页完整包含上次读到的地方）
+    pageOffset = hist[hist.length - 1];
+  }}
+
+  // ─── 数据 ──────────────────────────
   let books = [];
   let chapters = [];
   let book = null;
   let chapterIndex = 0;
   let chapterText = '';
   let pageOffset = 0;
-  let totalPages = 1;
-
-  // ─── API 调用 ──────────────────────
+  let snippetLen = 500;
+  let pageHistory = []; // 已访问页面的起始位置栈（栈顶 = 当前页起点）
 
   async function api(path, params) {{
     const url = new URL(path, location.origin);
@@ -1354,11 +1513,9 @@ async def read_page(
   }}
 
   // ─── 选书 ──────────────────────────
-
   async function loadBooks() {{
     try {{
       books = await api('/getBookshelf');
-      // 按最近阅读排序
       books.sort((a, b) => (b.durChapterTime || 0) - (a.durChapterTime || 0));
       const list = document.getElementById('bookList');
       list.innerHTML = '';
@@ -1366,8 +1523,9 @@ async def read_page(
         const li = document.createElement('li');
         li.className = 'book-item';
         const progress = b.durChapterTitle ? '上次阅读: ' + b.durChapterTitle : '未阅读';
-        li.innerHTML = '<div class="book-name">' + escHtml(b.name) + '</div>'
-          + '<div class="book-info">' + escHtml(progress) + ' · ' + b.totalChapterNum + ' 章</div>';
+        const author = b.author && b.author !== '未知作者' ? ' · ' + b.author : '';
+        li.innerHTML = '<div class="book-name-lg">' + escHtml(b.name) + '</div>'
+          + '<div class="book-info">' + escHtml(progress) + author + ' · ' + b.totalChapterNum + ' 章</div>';
         li.onclick = () => selectBook(i);
         list.appendChild(li);
       }});
@@ -1382,15 +1540,13 @@ async def read_page(
     book = books[index];
     document.getElementById('headerTitle').textContent = book.name;
     document.getElementById('bookView').style.display = 'none';
-    document.getElementById('readerView').style.display = 'block';
-    document.getElementById('toggleChapters').style.display = 'inline-block';
-    document.getElementById('chapterLoading') && (document.getElementById('chapterLoading').style.display = 'block');
+    const rv = document.getElementById('readerView');
+    rv.style.display = 'flex';
+    document.getElementById('btnChapters').style.display = 'inline-flex';
 
     try {{
       chapters = await api('/getChapterList', {{ url: book.bookUrl }});
       renderChapterList();
-
-      // 恢复上次阅读位置
       chapterIndex = book.durChapterIndex || 0;
       pageOffset = book.durChapterPos || 0;
       await loadChapter();
@@ -1399,11 +1555,19 @@ async def read_page(
     }}
   }}
 
-  // ─── 章节列表 ──────────────────────
+  // 返回书架列表（不离开页面）
+  window.backToBooks = function() {{
+    document.getElementById('readerView').style.display = 'none';
+    document.getElementById('bookView').style.display = 'block';
+    document.getElementById('headerTitle').textContent = '[文本阅读]';
+    document.getElementById('pageInfo').textContent = '';
+    document.getElementById('btnChapters').style.display = 'none';
+    document.getElementById('chapterList').classList.add('collapsed');
+    loadBooks(); // 刷新列表（保持最近阅读排序）
+  }};
 
   window.toggleChapterList = function() {{
-    const list = document.getElementById('chapterList');
-    list.classList.toggle('collapsed');
+    document.getElementById('chapterList').classList.toggle('collapsed');
   }};
 
   function renderChapterList() {{
@@ -1418,114 +1582,100 @@ async def read_page(
     }});
   }}
 
-  // ─── 加载章节内容 ──────────────────
-
   async function loadChapter() {{
     if (chapterIndex < 0 || chapterIndex >= chapters.length) return;
     document.getElementById('readerTitle').textContent = chapters[chapterIndex].title;
     document.getElementById('readerText').textContent = '加载中...';
 
     try {{
-      chapterText = await api('/getBookContent', {{
-        url: book.bookUrl,
-        index: chapterIndex
-      }});
-      // 去除 HTML 标签
+      chapterText = await api('/getBookContent', {{ url: book.bookUrl, index: chapterIndex }});
       chapterText = htmlToText(chapterText);
-      renderPage();
-      renderChapterList();
-      saveProgress();
+      // 等待 DOM 布局完成后再分页
+      requestAnimationFrame(() => {{
+        requestAnimationFrame(() => {{
+          buildPageHistory(); // 恢复进度：构建从章节开头到当前位置的完整页面历史
+          reflowPage(); renderChapterList(); saveProgress();
+        }});
+      }});
     }} catch (e) {{
       document.getElementById('readerText').textContent = '加载失败: ' + e.message;
     }}
   }}
 
-  // ─── 分页渲染 ──────────────────────
-
-  function renderPage() {{
-    totalPages = Math.max(1, Math.ceil(chapterText.length / SNIPPET_LEN));
+  function reflowPage() {{
     if (pageOffset >= chapterText.length) pageOffset = Math.max(0, chapterText.length - 1);
-    const start = pageOffset;
-    const end = Math.min(start + SNIPPET_LEN, chapterText.length);
-    const text = chapterText.substring(start, end);
-
-    document.getElementById('readerText').textContent = text || '（本章暂无内容）';
-    document.getElementById('pageInfo').textContent = '第 ' + (start + 1) + '-' + end + ' 字 / 共 ' + chapterText.length + ' 字';
-    document.getElementById('btnPrevPage').disabled = (start <= 0);
-    document.getElementById('btnNextPage').disabled = (end >= chapterText.length);
-    document.getElementById('btnPrevCh').disabled = (chapterIndex <= 0);
-    document.getElementById('btnNextCh').disabled = (chapterIndex >= chapters.length - 1);
+    const el = document.getElementById('readerText');
+    if (!el || !el.clientHeight) {{ snippetLen = 500; return; }}
+    const remaining = chapterText.substring(pageOffset);
+    snippetLen = findMaxFit(remaining, el);
+    const end = Math.min(pageOffset + snippetLen, chapterText.length);
+    el.textContent = remaining.substring(0, snippetLen) || '（本章暂无内容）';
+    document.getElementById('pageInfo').textContent = (pageOffset + 1) + '-' + end + ' / ' + chapterText.length + '字';
+    document.getElementById('btnPrevPage').disabled = (pageOffset <= 0 && chapterIndex <= 0);
+    document.getElementById('btnNextPage').disabled = (end >= chapterText.length && chapterIndex >= chapters.length - 1);
   }}
 
-  // ─── 翻页 ──────────────────────────
-
   window.prevPage = function() {{
-    pageOffset = Math.max(0, pageOffset - SNIPPET_LEN);
-    renderPage();
+    // 章首继续点 → 切上一章（翻到上一章末尾）
+    if (pageOffset <= 0 && pageHistory.length <= 1) {{
+      prevChapter(); return;
+    }}
+    // 弹出当前页起点，回到上一页起点（栈顶）
+    if (pageHistory.length > 1) pageHistory.pop();
+    pageOffset = pageHistory[pageHistory.length - 1];
+    reflowPage();
     saveProgress();
   }};
 
   window.nextPage = function() {{
-    if (pageOffset + SNIPPET_LEN >= chapterText.length) {{
-      nextChapter();
-      return;
-    }}
-    pageOffset += SNIPPET_LEN;
-    renderPage();
+    if (pageOffset + snippetLen >= chapterText.length) {{ nextChapter(); return; }}
+    pageOffset += snippetLen;
+    pageHistory.push(pageOffset); // 记录新页起点
+    reflowPage();
     saveProgress();
   }};
 
-  // ─── 切换章节 ──────────────────────
-
   window.prevChapter = function() {{
     if (chapterIndex <= 0) return;
-    chapterIndex--;
-    pageOffset = 0;
-    loadChapter();
+    chapterIndex--; pageOffset = 0; loadChapter();
   }};
 
   window.nextChapter = function() {{
     if (chapterIndex >= chapters.length - 1) return;
-    chapterIndex++;
-    pageOffset = 0;
-    loadChapter();
+    chapterIndex++; pageOffset = 0; loadChapter();
   }};
-
-  // ─── 保存进度 ──────────────────────
 
   async function saveProgress() {{
     if (!book) return;
     try {{
       await fetch('/saveBookProgress', {{
-        method: 'POST',
-        headers: {{ 'Content-Type': 'application/json' }},
+        method: 'POST', headers: {{ 'Content-Type': 'application/json' }},
         body: JSON.stringify({{
-          name: book.name,
-          author: book.author,
-          durChapterIndex: chapterIndex,
-          durChapterPos: pageOffset,
+          name: book.name, author: book.author,
+          durChapterIndex: chapterIndex, durChapterPos: pageOffset,
           durChapterTime: Date.now(),
-          durChapterTitle: chapters[chapterIndex]?.title || ''
+          durChapterTitle: (chapters[chapterIndex] || {{}}).title || ''
         }})
       }});
     }} catch (e) {{}}
   }}
 
-  // ─── 工具函数 ──────────────────────
-
   function escHtml(s) {{
-    const d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML;
+    const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
   }}
 
   function htmlToText(html) {{
-    const d = document.createElement('div');
-    d.innerHTML = html;
+    const d = document.createElement('div'); d.innerHTML = html;
     return d.textContent || d.innerText || '';
   }}
 
-  // ─── 启动 ──────────────────────────
+  // ─── 窗口调整 ──────────────────────
+  let resizeTimer;
+  window.onresize = function() {{
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {{ if (chapterText) reflowPage(); }}, 150);
+  }};
+
   loadBooks();
 }})();
 </script>
