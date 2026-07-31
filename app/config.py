@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     upload_chunk_size_kb: int = 512
     file_download_enabled: bool = False
     file_rename_pinyin: bool = False
+    # 是否启用文本阅读页面（/read）及其操作的 token 验证。
+    # 启用时（且配置了 API_TOKEN），访问 /read 及阅读器调用的
+    # getBookshelf/getChapterList/getBookContent/saveBookProgress 等接口需携带 token。
+    reader_token_enabled: bool = False
     source_a_enabled: bool = False
     source_a_url: str = ""
     source_a_name: str = "示例源A"

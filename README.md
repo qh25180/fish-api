@@ -78,6 +78,7 @@ cp .env.example .env
 | `DEFAULT_ENCODING` | `auto` | 默认编码（auto 表示自动检测） |
 | `REMOTE_DOWNLOAD_ENABLED` | `false` | 是否启用远程拉取下载接口 |
 | `API_TOKEN` | `qhapi-token` | 通用 API 访问口令（留空则不验证） |
+| `READER_TOKEN_ENABLED` | `false` | 是否启用文本阅读页面（/read）及其操作的 token 验证 |
 | `REMOTE_DOWNLOAD_ALLOW_INTRANET` | `false` | 是否允许远程下载内网地址的文件 |
 | `UPLOAD_ENABLED` | `false` | 是否启用文件上传接口 |
 | `UPLOAD_TIMEOUT_SECONDS` | `300` | 上传超时时间（秒） |
@@ -146,13 +147,18 @@ http://<服务器IP>:8000/docs?token=你的API_TOKEN
 | `POST /download`（远程拉取） | 请求体 `token` 字段 | 拉取 URL 文件到服务器 |
 | `POST /upload`（本地上传） | 表单 `token` 字段 | 上传本地文件到服务器 |
 | `GET /{filename}/download`（文件下载） | 查询参数 `?token=xxx` | 从服务器下载文件到本地 |
-| `GET /read`（文本阅读） | 查询参数 `?token=xxx` | 在线阅读文本 |
+| `GET /read`（文本阅读） | 查询参数 `?token=xxx` | 在线阅读文本（需 READER_TOKEN_ENABLED=true） |
+| `GET /getBookshelf` 等阅读器接口 | 查询参数 `?token=xxx` | 阅读器调用的书架/章节/内容/进度接口（需 READER_TOKEN_ENABLED=true） |
 | `GET /pages` 或 `/p`（导航索引） | 查询参数 `?token=xxx` | 页面入口索引 |
 | `GET /files`（文件管理） | 查询参数 `?token=xxx` | 浏览器文件管理页面 |
 | `POST /{filename}/delete`（文件删除） | 查询参数 `?token=xxx` | 删除服务器上的文件 |
 | `POST /{filename}/hide`（隐藏/取消隐藏） | 查询参数 `?token=xxx` | 隐藏或取消隐藏文件 |
 | `POST /{filename}/rename`（重命名） | 查询参数 `?token=xxx` | 重命名文件 |
 | `POST /{filename}/author`（修改作者） | 查询参数 `?token=xxx` | 修改作者信息 |
+| `GET /search`（书籍搜索） | 查询参数 `?token=xxx` | 搜索书籍 |
+| `GET /search-page`（搜索页面） | 查询参数 `?token=xxx` | 浏览器搜索页面 |
+| `GET /book-detail`（书籍详情） | 查询参数 `?token=xxx` | 获取书籍详情 |
+| `GET /books/download`（下载书籍） | 查询参数 `?token=xxx` | 通过搜索源下载书籍 |
 | `GET /docs`（Swagger 文档） | 查询参数 `?token=xxx` | 查看交互式 API 文档 |
 
 > 不需要 Token 的接口：文本文件列表、章节列表、内容读取、健康检查等纯读取接口。

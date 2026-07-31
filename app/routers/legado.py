@@ -4,9 +4,12 @@
 所有响应均包装在 LegadoApiResponse 统一格式中。
 """
 
+import secrets
+
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
+from app.config import settings
 from app.legado_models import (
     LegadoApiResponse,
     LegadoBook,
@@ -17,6 +20,16 @@ from app.legado_models import (
 from app.services import legado_service
 
 router = APIRouter(tags=["legado"])
+
+
+def _require_reader_token(token: str | None):
+    """若启用了阅读器 token 验证，校验 token，无效则抛 403。"""
+    if settings.reader_token_enabled and settings.api_token:
+        if not token or not secrets.compare_digest(token, settings.api_token):
+            detail = LegadoApiResponse(
+                isSuccess=False, errorMsg="无效的访问口令", data=None
+            ).model_dump()
+            raise HTTPException(status_code=403, detail=detail)
 
 
 def ok(data):
@@ -33,8 +46,9 @@ def fail(message: str, status_code: int = 400):
 
 
 @router.get("/getBookshelf")
-async def get_bookshelf():
+async def get_bookshelf(token: str | None = Query(None)):
     """获取书架列表（本地文件列表 → Legado Book 格式）。"""
+    _require_reader_token(token)
     try:
         books = legado_service.get_bookshelf()
         return ok(books)
@@ -43,8 +57,12 @@ async def get_bookshelf():
 
 
 @router.get("/getChapterList")
-async def get_chapter_list(url: str = Query(..., description="文件标识(bookUrl)")):
+async def get_chapter_list(
+    url: str = Query(..., description="文件标识(bookUrl)"),
+    token: str | None = Query(None),
+):
     """获取指定文件的章节目录。"""
+    _require_reader_token(token)
     try:
         chapters = legado_service.get_chapter_list(url)
         return ok(chapters)
@@ -58,8 +76,10 @@ async def get_chapter_list(url: str = Query(..., description="文件标识(bookU
 async def get_book_content(
     url: str = Query(..., description="文件标识(bookUrl)"),
     index: int = Query(..., ge=0, description="章节索引(从0开始)"),
+    token: str | None = Query(None),
 ):
     """获取指定章节的完整文本内容。"""
+    _require_reader_token(token)
     try:
         content = legado_service.get_book_content(url, index)
         return ok(content)
@@ -72,8 +92,12 @@ async def get_book_content(
 
 
 @router.post("/saveBookProgressByChapter")
-async def save_book_progress_by_chapter(progress: LegadoChapterProgress):
+async def save_book_progress_by_chapter(
+    progress: LegadoChapterProgress,
+    token: str | None = Query(None),
+):
     """按章节标题或序号切换阅读进度（保存到该章节起始位置）。"""
+    _require_reader_token(token)
     try:
         legado_service.save_progress_by_chapter(
             book_url=progress.bookUrl,
@@ -89,8 +113,12 @@ async def save_book_progress_by_chapter(progress: LegadoChapterProgress):
 
 
 @router.post("/saveBookProgress")
-async def save_book_progress(progress: LegadoBookProgress):
+async def save_book_progress(
+    progress: LegadoBookProgress,
+    token: str | None = Query(None),
+):
     """保存阅读进度（持久化到 JSON 文件）。"""
+    _require_reader_token(token)
     try:
         legado_service.save_book_progress(
             name=progress.name,

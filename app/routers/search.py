@@ -14,9 +14,17 @@ from app.sources import get_source, list_sources
 router = APIRouter(prefix="/api/v1", tags=["search"])
 
 
+def _require_token(token: str | None):
+    """若配置了 API_TOKEN，校验 token，无效抛 403。"""
+    if settings.api_token:
+        if not token or not secrets.compare_digest(token, settings.api_token):
+            raise HTTPException(status_code=403, detail="无效的访问口令")
+
+
 @router.get("/sources")
-async def sources_list():
+async def sources_list(token: str | None = Query(None)):
     """列出可用搜索源。"""
+    _require_token(token)
     return list_sources()
 
 
@@ -24,8 +32,10 @@ async def sources_list():
 async def search_books(
     q: str = Query(..., min_length=1, description="搜索关键词"),
     source: str = Query("a", description="搜索源名称（a/b/auto）"),
+    token: str | None = Query(None),
 ):
     """搜索书籍。"""
+    _require_token(token)
     if source == "auto":
         results = []
         for name in ["a", "b"]:
@@ -49,8 +59,10 @@ async def search_books(
 async def book_detail(
     book_id: str = Query(..., description="书籍 ID"),
     source: str = Query("a", description="搜索源名称"),
+    token: str | None = Query(None),
 ):
     """获取书籍详情和下载链接。"""
+    _require_token(token)
     s = get_source(source)
     if not s:
         raise HTTPException(status_code=400, detail=f"未知搜索源: {source}")
@@ -65,6 +77,42 @@ async def search_page(
     token: str | None = Query(None),
 ):
     """浏览器搜索页面。"""
+    # 页面本身 token 验证
+    if settings.api_token:
+        if not token or not secrets.compare_digest(token, settings.api_token):
+            return HTMLResponse(
+                content=f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>书籍搜索</title>
+<style>
+  * {{ box-sizing: border-box; }}
+  body {{ font-family: sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; background: #fafafa; }}
+  .box {{ text-align: center; }}
+  h2 {{ font-size: 18px; margin-bottom: 12px; }}
+  p {{ color: #666; font-size: 14px; margin-bottom: 20px; }}
+  input, button {{ padding: 10px 14px; font-size: 14px; border-radius: 6px; border: 1px solid #ccc; }}
+  input {{ width: 220px; }}
+  button {{ background: #007acc; color: #fff; border: none; cursor: pointer; margin-left: 8px; }}
+  button:hover {{ background: #005999; }}
+</style>
+</head>
+<body>
+<div class="box">
+  <h2>🔒 需要访问口令</h2>
+  <p>书籍搜索页面已启用口令验证，请输入有效 token</p>
+  <form method="get" action="/api/v1/search-page">
+    <input type="text" name="token" placeholder="请输入访问口令">
+    <button type="submit">进入</button>
+  </form>
+</div>
+</body>
+</html>""",
+                status_code=403,
+            )
+
     t = quote(token, safe="") if token else ""
 
     sources_html = ""
@@ -130,7 +178,7 @@ function search() {{
   status.innerHTML = '<div class="msg info">🔍 搜索中...</div>';
   results.innerHTML = '';
 
-  var url = '/api/v1/search?q=' + encodeURIComponent(kw) + '&source=' + src;
+  var url = '/api/v1/search?q=' + encodeURIComponent(kw) + '&source=' + src + (TOKEN ? '&token=' + encodeURIComponent(TOKEN) : '');
   fetch(url).then(function(r) {{ return r.json(); }}).then(function(d) {{
     if (d.total === 0) {{
       status.innerHTML = '<div class="msg error">❌ 未找到匹配结果</div>';

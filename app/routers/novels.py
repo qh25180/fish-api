@@ -1363,7 +1363,47 @@ _READER_STYLE = """
 async def read_page(
     token: str | None = Query(None),
 ):
-    """在线阅读服务器上的文本。需要 token 验证。"""
+    """在线阅读服务器上的文本。
+
+    若配置了 READER_TOKEN_ENABLED=true 且设置了 API_TOKEN，
+    则访问本页面需携带有效 token，否则返回 403 错误页。
+    """
+    # 阅读器 token 验证（可选启用）
+    if settings.reader_token_enabled and settings.api_token:
+        if not token or not secrets.compare_digest(token, settings.api_token):
+            return HTMLResponse(
+                content="""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>文本阅读</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: sans-serif; background: #f5f1eb; color: #333; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
+  .box { text-align: center; }
+  h2 { font-size: 18px; margin-bottom: 12px; }
+  p { color: #666; font-size: 14px; margin-bottom: 20px; }
+  input, button { padding: 10px 14px; font-size: 14px; border-radius: 6px; border: 1px solid #ccc; }
+  input { width: 220px; }
+  button { background: #007acc; color: #fff; border: none; cursor: pointer; margin-left: 8px; }
+  button:hover { background: #005999; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h2>🔒 需要访问口令</h2>
+  <p>文本阅读页面已启用口令验证，请输入有效 token</p>
+  <form method="get" action="/api/v1/novels/read">
+    <input type="text" name="token" placeholder="请输入访问口令">
+    <button type="submit">进入</button>
+  </form>
+</div>
+</body>
+</html>""",
+                status_code=403,
+            )
+
     back_html = _back_to_index_html(token)
     t = quote(token or "", safe="")
 
@@ -1769,7 +1809,7 @@ async def read_page(
   async function saveProgress() {{
     if (!book) return;
     try {{
-      await fetch('/saveBookProgress', {{
+      await fetch('/saveBookProgress' + (TOKEN ? '?token=' + encodeURIComponent(TOKEN) : ''), {{
         method: 'POST', headers: {{ 'Content-Type': 'application/json' }},
         body: JSON.stringify({{
           name: book.name, author: book.author,
