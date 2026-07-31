@@ -142,6 +142,7 @@ async def read_content(
 
 _INDEX_STYLE = """
 <style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }
   .msg { padding: 12px; border-radius: 4px; margin-bottom: 16px; }
   .msg.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
@@ -149,30 +150,32 @@ _INDEX_STYLE = """
   .card:hover { background: #e9ecef; }
   .card-title { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
   .card-desc { font-size: 13px; color: #666; }
+  h2 { font-size: 20px; }
+  @media (max-width: 720px) {
+    body { margin: 20px auto; padding: 0 12px; }
+    h2 { font-size: 18px; }
+    .card { padding: 14px 16px; }
+  }
 </style>
 """
 
 
-@router.get("/pages", response_class=HTMLResponse, summary="短链接索引页（浏览器访问）")
-async def pages_index(
-    token: str | None = Query(None),
-):
-    """所有页面入口的索引页。需要 token 验证。"""
+def _pages_index_html(token: str | None) -> str:
+    """渲染短链接索引页 HTML。token 无效时返回 403 页。"""
     # Token 验证
     if settings.api_token:
         if not token or not secrets.compare_digest(token, settings.api_token):
-            return HTMLResponse(
-                content=f"""<!DOCTYPE html>
-<html lang="zh-CN"><head><meta charset="UTF-8"><title>导航</title>
+            return f"""<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>导航</title>
 {_INDEX_STYLE}</head>
 <body><h2>📑 导航</h2>
 <div class="msg error">❌ 需要有效的访问口令</div>
-<form method="get" action="/api/v1/novels/pages">
+<form method="get" action="/p">
 <input type="text" name="token" placeholder="请输入访问口令" style="width:100%;padding:8px;box-sizing:border-box;">
 <button type="submit" style="margin-top:12px;padding:10px 24px;background:#007acc;color:#fff;border:none;border-radius:4px;cursor:pointer;">验证</button>
-</form></body></html>""",
-                status_code=403,
-            )
+</form></body></html>"""
 
     t = quote(token, safe="")
     pages = [
@@ -190,10 +193,11 @@ async def pages_index(
 <div class="card-desc">{html_mod.escape(desc)}</div>
 </a>"""
 
-    html = f"""<!DOCTYPE html>
+    return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>导航</title>
 {_INDEX_STYLE}
 </head>
@@ -202,7 +206,14 @@ async def pages_index(
 {cards_html}
 </body>
 </html>"""
-    return HTMLResponse(content=html)
+
+
+@router.get("/pages", response_class=HTMLResponse, summary="短链接索引页（浏览器访问）")
+async def pages_index(
+    token: str | None = Query(None),
+):
+    """所有页面入口的索引页。需要 token 验证。"""
+    return HTMLResponse(content=_pages_index_html(token))
 
 
 # ─── 上传页面 ───────────────────────────────────────
@@ -228,8 +239,10 @@ async def upload_page(
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>文件上传</title>
 <style>
+  * {{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }}
   body {{ font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }}
   form {{ border: 1px solid #ddd; padding: 24px; border-radius: 8px; background: #fafafa; }}
   label {{ display: block; margin: 12px 0 4px; font-weight: bold; }}
@@ -247,6 +260,12 @@ async def upload_page(
   .progress-fill {{ height: 100%; background: #28a745; width: 0%; transition: width 0.3s; }}
   .progress-text {{ font-size: 13px; color: #666; margin-top: 4px; }}
   .status {{ margin-top: 8px; font-size: 14px; }}
+  @media (max-width: 720px) {{
+    body {{ margin: 16px auto; padding: 0 12px; }}
+    form {{ padding: 16px; }}
+    h2 {{ font-size: 18px; }}
+    button {{ width: 100%; padding: 12px; font-size: 15px; }}
+  }}
 </style>
 </head>
 <body>
@@ -724,8 +743,10 @@ async def files_page(
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>文件管理</title>
 <style>
+  * {{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }}
   body {{ font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; }}
   .msg {{ padding: 12px; border-radius: 4px; margin-bottom: 16px; }}
   .msg.success {{ background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }}
@@ -753,12 +774,21 @@ async def files_page(
   .pagination a {{ display: inline-block; padding: 6px 16px; margin: 0 4px; background: #e9ecef; color: #333; border-radius: 4px; text-decoration: none; }}
   .pagination a:hover {{ background: #ddd; }}
   .pagination span {{ display: inline-block; padding: 6px 12px; }}
+  @media (max-width: 720px) {{
+    body {{ margin: 16px auto; padding: 0 8px; }}
+    h2 {{ font-size: 18px; }}
+    /* 表格横向滚动适配小屏 */
+    .table-wrap {{ overflow-x: auto; -webkit-overflow-scrolling: touch; }}
+    table {{ min-width: 520px; }}
+    th, td {{ padding: 8px 8px; font-size: 13px; }}
+  }}
 </style>
 </head>
 <body>
 {back_html}
 <h2>[文件管理]</h2>
 {msg_html}
+<div class="table-wrap">
 <table>
 <thead>
 <tr><th>文件名</th><th>大小</th><th>作者</th><th>修改时间</th><th>操作</th></tr>
@@ -767,6 +797,7 @@ async def files_page(
 {rows_html}
 </tbody>
 </table>
+</div>
 {pagination_html}
 </body>
 </html>"""
@@ -1073,8 +1104,10 @@ async def download_page(
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>远程下载</title>
 <style>
+  * {{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }}
   body {{ font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }}
   form {{ border: 1px solid #ddd; padding: 24px; border-radius: 8px; background: #fafafa; }}
   label {{ display: block; margin: 12px 0 4px; font-weight: bold; }}
@@ -1085,6 +1118,12 @@ async def download_page(
   .msg {{ padding: 12px; border-radius: 4px; margin-bottom: 16px; }}
   .msg.success {{ background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }}
   .msg.error {{ background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }}
+  @media (max-width: 720px) {{
+    body {{ margin: 16px auto; padding: 0 12px; }}
+    form {{ padding: 16px; }}
+    h2 {{ font-size: 18px; }}
+    button {{ width: 100%; padding: 12px; font-size: 15px; }}
+  }}
 </style>
 </head>
 <body>
@@ -1229,7 +1268,7 @@ async def download_file(
 
 _READER_STYLE = """
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; overflow: hidden; }
   body { font-family: var(--font-family, "Noto Serif SC", serif); background: var(--bg-color, #f5f1eb); color: var(--text-color, #333); }
   .container { max-width: 900px; margin: 0 auto; padding: 10px 20px; height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
@@ -1246,27 +1285,45 @@ _READER_STYLE = """
   .book-name-lg { font-size: 16px; font-weight: bold; }
   .book-info { font-size: 13px; color: #888; margin-top: 4px; }
 
-  /* 章节列表 */
-  .chapter-list { max-height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; background: var(--card-bg, #fff); margin-bottom: 12px; flex-shrink: 0; }
-  .chapter-item { padding: 10px 16px; border-bottom: 1px solid #eee; cursor: pointer; font-size: 14px; }
-  .chapter-item:last-child { border-bottom: none; }
-  .chapter-item:hover { background: #e9ecef; }
-  .chapter-item.active { background: #007acc; color: #fff; }
-  .chapter-list.collapsed { display: none; }
+  /* 章节列表弹窗 */
+  .chapters-modal .chapters-list { max-height: 55vh; overflow-y: auto; border: 1px solid color-mix(in srgb, var(--text-color, #333) 15%, transparent); border-radius: 6px; margin: 8px 0; }
+  .chapters-modal .chapter-item { padding: 10px 14px; border-bottom: 1px solid color-mix(in srgb, var(--text-color, #333) 8%, transparent); cursor: pointer; font-size: 14px; }
+  .chapters-modal .chapter-item:last-child { border-bottom: none; }
+  .chapters-modal .chapter-item:hover { background: color-mix(in srgb, var(--text-color, #333) 6%, transparent); }
+  .chapters-modal .chapter-item.active { background: #007acc; color: #fff; }
 
-  /* 阅读区域 — 自适应无滚动 */
+  /* 阅读区域 — 自适应无滚动，文本区域与页面同色（沉浸阅读） */
   .reader-wrap { flex: 1; position: relative; display: flex; align-items: stretch; min-height: 0; }
-  .reader { background: var(--card-bg, #fff); border-radius: 6px; padding: 20px 30px; flex: 1; display: flex; flex-direction: column; overflow: hidden; margin: 8px 0; }
-  .reader-title { font-size: calc(var(--font-size, 17px) + 4px); font-weight: bold; text-align: center; margin-bottom: 16px; color: #555; flex-shrink: 0; }
+  .reader { background: var(--bg-color, #f5f1eb); border-radius: 6px; padding: 20px 30px; flex: 1; display: flex; flex-direction: column; overflow: hidden; margin: 8px 0; }
+  .reader-title { font-size: calc(var(--font-size, 17px) + 2px); font-weight: bold; text-align: center; margin-bottom: 10px; color: color-mix(in srgb, var(--text-color, #333) 60%, transparent); flex-shrink: 0; }
   .reader-text { flex: 1; overflow: hidden; font-size: var(--font-size, 17px); line-height: var(--line-height, 1.9); white-space: pre-wrap; word-wrap: break-word; }
 
-  /* 导航按钮悬浮两侧 */
+  /* 章节加载中提示 */
+  .reader-loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: color-mix(in srgb, var(--text-color, #333) 55%, transparent); font-size: 14px; z-index: 20; pointer-events: none; }
+  .spinner { width: 28px; height: 28px; border: 3px solid color-mix(in srgb, var(--text-color, #333) 20%, transparent); border-top-color: var(--text-color, #333); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to {{ transform: rotate(360deg); }} }
+
+  /* 导航按钮悬浮两侧 — 竖排窄条，卡片全宽不留白 */
   .nav-left, .nav-right { position: absolute; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 10; }
-  .nav-left { left: -52px; }
-  .nav-right { right: -52px; }
-  .nav-btn { padding: 6px 10px; border: 1px solid var(--text-color, #333); background: var(--card-bg, #fff); color: var(--text-color, #333); border-radius: 6px; cursor: pointer; font-size: 12px; white-space: nowrap; opacity: 0.55; transition: opacity 0.2s; }
+  .nav-left { left: 4px; }
+  .nav-right { right: 4px; }
+  .nav-btn { width: 28px; padding: 12px 3px; border: none; border-radius: 10px;
+    background: rgba(128, 128, 128, 0.35); color: #fff; cursor: pointer;
+    font-size: 12px; letter-spacing: 3px;
+    writing-mode: vertical-rl; text-orientation: upright;
+    opacity: 0.55; transition: opacity 0.2s; }
   .nav-btn:hover { opacity: 1; }
-  .nav-btn:disabled { opacity: 0.2; cursor: not-allowed; }
+  .nav-btn:disabled { opacity: 0.15; cursor: not-allowed; }
+  .nav-btn .nav-icon { display: none; }
+
+  /* 大范围点击热区 — 上方整行+左侧整列=上一页；下方整行+右侧整列=下一页 */
+  .tap-zone { position: absolute; cursor: pointer; background: transparent; }
+  /* 点击反馈：跟随主题文字色 10% 淡色，深浅主题均自然，几乎不干扰阅读 */
+  .tap-zone:active, .tap-zone.tapping { background: rgba(128, 128, 128, 0.10); background: color-mix(in srgb, var(--text-color, #333) 10%, transparent); }
+  .tap-zone-prev-top { left: 0; top: 0; width: 100%; height: 20%; min-height: 80px; z-index: 5; }
+  .tap-zone-prev-left { left: 0; top: 0; width: 56px; height: 100%; z-index: 6; }
+  .tap-zone-next-bottom { left: 0; bottom: 0; width: 100%; height: 20%; min-height: 80px; z-index: 5; }
+  .tap-zone-next-right { right: 0; top: 0; width: 56px; height: 100%; z-index: 6; }
 
   /* 设置弹窗 */
   .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000; align-items: center; justify-content: center; }
@@ -1290,16 +1347,13 @@ _READER_STYLE = """
 
   @media (max-width: 720px) {
     .container { padding: 8px 10px; }
-    .nav-left { left: 8px; }
-    .nav-right { right: 8px; }
-    /* 移动端：纯图标小圆钮，半透明减少遮挡 */
-    .nav-btn { width: 40px; height: 40px; padding: 0; border: none; border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      background: rgba(128, 128, 128, 0.4); color: #fff; font-size: 15px; backdrop-filter: blur(2px); }
-    .nav-btn .nav-txt { display: none; }
-    .nav-btn:active { background: rgba(0, 122, 204, 0.7); }
-    /* 阅读卡片左右缩进，给两侧悬浮按钮留出专用空间 */
-    .reader { padding: 12px 16px; margin: 8px 46px; }
+    .nav-left { left: 2px; }
+    .nav-right { right: 2px; }
+    /* 移动端：同样竖排文字，更窄更小 */
+    .nav-btn { width: 20px; padding: 10px 2px; font-size: 10px; letter-spacing: 2px;
+      border-radius: 8px; background: rgba(128, 128, 128, 0.35); }
+    .tap-zone-prev-left, .tap-zone-next-right { width: 48px; }
+    .reader { padding: 12px 24px; margin: 8px 0; }
   }
 </style>
 """
@@ -1340,17 +1394,26 @@ async def read_page(
 
   <!-- 阅读区 -->
   <div id="readerView" style="display:none;flex:1;flex-direction:column;min-height:0;">
-    <div class="chapter-list collapsed" id="chapterList"></div>
     <div class="reader-wrap" style="flex:1;position:relative;">
       <div class="nav-left">
-        <button class="nav-btn" id="btnPrevPage" onclick="prevPage()" disabled>◀ <span class="nav-txt">上一页</span></button>
+        <button class="nav-btn" id="btnPrevPage" onclick="prevPage()" disabled><span class="nav-icon">◀</span><span class="nav-txt">上一页</span></button>
       </div>
+      <!-- 点击热区：上方整行+左侧整列=上一页；下方整行+右侧整列=下一页 -->
+      <div class="tap-zone tap-zone-prev-top" onclick="prevPage()" title="上一页"></div>
+      <div class="tap-zone tap-zone-prev-left" onclick="prevPage()" title="上一页"></div>
+      <div class="tap-zone tap-zone-next-bottom" onclick="nextPage()" title="下一页"></div>
+      <div class="tap-zone tap-zone-next-right" onclick="nextPage()" title="下一页"></div>
       <div class="reader">
         <div class="reader-title" id="readerTitle"></div>
         <div class="reader-text" id="readerText"></div>
+        <!-- 章节加载中提示 -->
+        <div class="reader-loading" id="readerLoading" style="display:none">
+          <div class="spinner"></div>
+          <span>章节加载中...</span>
+        </div>
       </div>
       <div class="nav-right">
-        <button class="nav-btn" id="btnNextPage" onclick="nextPage()" disabled><span class="nav-txt">下一页</span> ▶</button>
+        <button class="nav-btn" id="btnNextPage" onclick="nextPage()" disabled><span class="nav-txt">下一页</span><span class="nav-icon">▶</span></button>
       </div>
     </div>
   </div>
@@ -1369,6 +1432,15 @@ async def read_page(
     <button class="btn-confirm" onclick="applySettings()">确定</button>
   </div>
 </div>
+
+  <!-- 章节列表弹窗 -->
+  <div class="modal-overlay" id="chaptersModal">
+    <div class="modal chapters-modal">
+      <h3>章节目录</h3>
+      <div class="chapters-list" id="chapterList"></div>
+      <button class="btn-confirm" onclick="hideChapters()">关闭</button>
+    </div>
+  </div>
 
 <script>
 (function() {{
@@ -1454,6 +1526,19 @@ async def read_page(
     }}
   }};
 
+  // ─── 触摸点击反馈（移动端） ─────────
+  // :active 在移动浏览器上不可靠，且会被系统 tap 高亮覆盖，
+  // 这里用 touch 事件手动加 .tapping 类控制反馈色
+  document.querySelectorAll('.tap-zone').forEach(z => {{
+    z.addEventListener('touchstart', () => z.classList.add('tapping'), {{ passive: true }});
+    z.addEventListener('touchend', () => z.classList.remove('tapping'));
+    z.addEventListener('touchcancel', () => z.classList.remove('tapping'));
+    // 鼠标端也统一（保留 :active 同时加类，更可靠）
+    z.addEventListener('mousedown', () => z.classList.add('tapping'));
+    z.addEventListener('mouseup', () => z.classList.remove('tapping'));
+    z.addEventListener('mouseleave', () => z.classList.remove('tapping'));
+  }});
+
   // ─── 分页计算（实测，保证不溢出） ──────
   function findMaxFit(text, el) {{
     // 二分查找：在当前视口内能完整显示的最长前缀
@@ -1500,6 +1585,7 @@ async def read_page(
   let pageOffset = 0;
   let snippetLen = 500;
   let pageHistory = []; // 已访问页面的起始位置栈（栈顶 = 当前页起点）
+  let jumpToEnd = false; // 切上一章后定位到章节末尾
 
   async function api(path, params) {{
     const url = new URL(path, location.origin);
@@ -1555,19 +1641,41 @@ async def read_page(
     }}
   }}
 
-  // 返回书架列表（不离开页面）
+  // 返回书架列表（在阅读视图）；在书架页则返回索引页
   window.backToBooks = function() {{
-    document.getElementById('readerView').style.display = 'none';
+    const rv = document.getElementById('readerView');
+    // 已在书架列表页 → 跳转索引页
+    if (rv.style.display === 'none') {{
+      window.location.href = '/p/' + encodeURIComponent(TOKEN);
+      return;
+    }}
+    rv.style.display = 'none';
     document.getElementById('bookView').style.display = 'block';
     document.getElementById('headerTitle').textContent = '[文本阅读]';
     document.getElementById('pageInfo').textContent = '';
     document.getElementById('btnChapters').style.display = 'none';
-    document.getElementById('chapterList').classList.add('collapsed');
+    hideChapters();
     loadBooks(); // 刷新列表（保持最近阅读排序）
   }};
 
+  // ─── 章节列表弹窗 ───────────────
   window.toggleChapterList = function() {{
-    document.getElementById('chapterList').classList.toggle('collapsed');
+    const modal = document.getElementById('chaptersModal');
+    modal.classList.toggle('show');
+    // 打开时滚动到当前章节
+    if (modal.classList.contains('show')) {{
+      const cur = modal.querySelector('.chapter-item.active');
+      if (cur) cur.scrollIntoView({{ block: 'center' }});
+    }}
+  }};
+
+  window.hideChapters = function() {{
+    document.getElementById('chaptersModal').classList.remove('show');
+  }};
+
+  // 点击遮罩关闭章节弹窗
+  document.getElementById('chaptersModal').onclick = function(e) {{
+    if (e.target === this) hideChapters();
   }};
 
   function renderChapterList() {{
@@ -1577,7 +1685,9 @@ async def read_page(
       const div = document.createElement('div');
       div.className = 'chapter-item' + (i === chapterIndex ? ' active' : '');
       div.textContent = ch.title;
-      div.onclick = () => {{ chapterIndex = i; pageOffset = 0; loadChapter(); }};
+      div.onclick = () => {{
+        chapterIndex = i; pageOffset = 0; hideChapters(); loadChapter();
+      }};
       list.appendChild(div);
     }});
   }}
@@ -1585,19 +1695,29 @@ async def read_page(
   async function loadChapter() {{
     if (chapterIndex < 0 || chapterIndex >= chapters.length) return;
     document.getElementById('readerTitle').textContent = chapters[chapterIndex].title;
-    document.getElementById('readerText').textContent = '加载中...';
+    document.getElementById('readerLoading').style.display = 'flex';
+    document.getElementById('readerText').style.display = 'none';
 
     try {{
       chapterText = await api('/getBookContent', {{ url: book.bookUrl, index: chapterIndex }});
       chapterText = htmlToText(chapterText);
+      // 上一章切换：定位到本章最后一页
+      if (jumpToEnd) {{
+        jumpToEnd = false;
+        pageOffset = Math.max(0, chapterText.length - 1);
+      }}
       // 等待 DOM 布局完成后再分页
       requestAnimationFrame(() => {{
         requestAnimationFrame(() => {{
+          document.getElementById('readerLoading').style.display = 'none';
+          document.getElementById('readerText').style.display = 'block';
           buildPageHistory(); // 恢复进度：构建从章节开头到当前位置的完整页面历史
           reflowPage(); renderChapterList(); saveProgress();
         }});
       }});
     }} catch (e) {{
+      document.getElementById('readerLoading').style.display = 'none';
+      document.getElementById('readerText').style.display = 'block';
       document.getElementById('readerText').textContent = '加载失败: ' + e.message;
     }}
   }}
@@ -1637,6 +1757,7 @@ async def read_page(
 
   window.prevChapter = function() {{
     if (chapterIndex <= 0) return;
+    jumpToEnd = true; // 切到上一章最后一页
     chapterIndex--; pageOffset = 0; loadChapter();
   }};
 

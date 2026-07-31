@@ -75,8 +75,10 @@ async def search_page(
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>书籍搜索</title>
 <style>
+  * {{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }}
   body {{ font-family: sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; }}
   .search-box {{ display: flex; gap: 8px; margin-bottom: 16px; }}
   .search-box input[type=text] {{ flex: 1; padding: 10px; font-size: 16px; border: 1px solid #ddd; border-radius: 4px; }}
@@ -93,6 +95,16 @@ async def search_page(
   .msg.error {{ background: #f8d7da; color: #721c24; }}
   .msg.success {{ background: #d4edda; color: #155724; }}
   #status {{ margin-top: 12px; }}
+  @media (max-width: 720px) {{
+    body {{ margin: 16px auto; padding: 0 12px; }}
+    h2 {{ font-size: 18px; }}
+    .search-box {{ flex-wrap: wrap; }}
+    .search-box input[type=text] {{ min-width: 100%; }}
+    .search-box select {{ flex: 1; }}
+    .search-box button {{ flex: 1; padding: 10px; }}
+    .result {{ flex-wrap: wrap; gap: 8px; }}
+    .result .btn {{ padding: 8px 20px; }}
+  }}
 </style>
 </head>
 <body>

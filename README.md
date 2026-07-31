@@ -15,6 +15,9 @@ QHAPI 是基于 Python + FastAPI 构建的通用 API 服务。
 - **ASGI 服务器**: Uvicorn
 - **编码检测**: chardet（自动检测 UTF-8/GBK/BIG5 等）
 - **异步下载**: httpx + aiofiles
+- **拼音转换**: pypinyin（中文文件名转拼音）
+- **元数据提取**: 书名/作者自动识别（`《》` 书名号、文件名、正文头部）
+- **浏览器阅读器**: 原生 HTML/CSS/JS，无前端依赖，支持移动端
 
 ## 项目结构
 
@@ -25,22 +28,24 @@ QHAPI 是基于 Python + FastAPI 构建的通用 API 服务。
 │   ├── legado_models.py       # Legado HTTP API 兼容数据模型
 │   ├── sources/               # 搜索源插件体系
 │   │   ├── __init__.py        # 基类 + 注册表
-│   │   ├── source_a.py        # 源A
-│   │   └── source_b.py        # 源B（自动解压）
+│   │   ├── source_a.py        # 源A（HTML 解析）
+│   │   └── source_b.py        # 源B（API）
 │   ├── routers/
-│   │   ├── novels.py          # 阅读 API 路由
+│   │   ├── novels.py          # 阅读 API 路由 + 浏览器页面
 │   │   ├── search.py          # 搜索 API + 搜索页面
 │   │   └── legado.py          # Legado HTTP API 兼容路由
 │   ├── services/
-│   │   ├── file_service.py    # 文件扫描、章节解析、文本提取
+│   │   ├── file_service.py    # 文件扫描、章节解析、文本提取、作者识别
 │   │   ├── download_service.py# URL 下载、防同名覆盖
-│   │   └── legado_service.py  # Legado 数据映射服务
+│   │   └── legado_service.py  # Legado 数据映射 + 进度持久化
 │   └── utils/
 │       ├── encoding.py        # chardet 编码检测封装
+│       ├── meta_util.py       # 书名/作者元数据提取
 │       └── pinyin_util.py     # 中文转拼音工具
 ├── novels/                    # 文本文件存放目录
 ├── scripts/
-│   └── qhapi_book.sh          # 命令行搜索下载脚本
+│   ├── qhapi_book.sh          # 命令行搜索下载脚本
+│   └── update-hosts.sh        # GitHub hosts 定时更新
 ├── main.py                    # 应用入口
 ├── requirements.txt           # Python 依赖
 ├── .env.example               # 配置模板
@@ -142,9 +147,12 @@ http://<服务器IP>:8000/docs?token=你的API_TOKEN
 | `POST /upload`（本地上传） | 表单 `token` 字段 | 上传本地文件到服务器 |
 | `GET /{filename}/download`（文件下载） | 查询参数 `?token=xxx` | 从服务器下载文件到本地 |
 | `GET /read`（文本阅读） | 查询参数 `?token=xxx` | 在线阅读文本 |
-| `GET /pages`（导航索引） | 查询参数 `?token=xxx` | 页面入口索引 |
+| `GET /pages` 或 `/p`（导航索引） | 查询参数 `?token=xxx` | 页面入口索引 |
 | `GET /files`（文件管理） | 查询参数 `?token=xxx` | 浏览器文件管理页面 |
 | `POST /{filename}/delete`（文件删除） | 查询参数 `?token=xxx` | 删除服务器上的文件 |
+| `POST /{filename}/hide`（隐藏/取消隐藏） | 查询参数 `?token=xxx` | 隐藏或取消隐藏文件 |
+| `POST /{filename}/rename`（重命名） | 查询参数 `?token=xxx` | 重命名文件 |
+| `POST /{filename}/author`（修改作者） | 查询参数 `?token=xxx` | 修改作者信息 |
 | `GET /docs`（Swagger 文档） | 查询参数 `?token=xxx` | 查看交互式 API 文档 |
 
 > 不需要 Token 的接口：文本文件列表、章节列表、内容读取、健康检查等纯读取接口。
@@ -156,19 +164,27 @@ http://<服务器IP>:8000/docs?token=你的API_TOKEN
 
 | 方法 | 路径 | 功能 |
 |------|------|------|
-| `GET` | `/api/v1/novels` | 列出所有文本文件（分页 + 扩展名过滤） |
+| `GET` | `/p` | 短链接索引页（?token=xxx） |
+| `GET` | `/p/{token}` | 短链接索引页（token 放路径，手机方便输入） |
+| `GET` | `/api/v1/novels` | 列出所有文本文件（分页 + 扩展名过滤 + 作者） |
 | `GET` | `/api/v1/novels/{filename}/chapters` | 获取文件的章节列表 |
 | `GET` | `/api/v1/novels/{filename}/chapters/{chapter_number}` | 按章节获取内容（支持章节内偏移） |
 | `GET` | `/api/v1/novels/{filename}/content` | 按全局偏移获取内容（支持按章节定位） |
 | `POST` | `/api/v1/novels/download` | 远程拉取 URL 文件（需 REMOTE_DOWNLOAD_ENABLED=true） |
 | `POST` | `/api/v1/novels/upload` | 上传本地文件（需 UPLOAD_ENABLED=true） |
+| `POST` | `/api/v1/novels/upload/init` | 分片上传初始化 |
+| `POST` | `/api/v1/novels/upload/chunk` | 分片上传数据块 |
+| `POST` | `/api/v1/novels/upload/complete` | 分片上传完成 |
 | `GET` | `/api/v1/novels/upload` | 浏览器访问的上传页面 |
-| `GET` | `/api/v1/novels/pages` | 短链接索引页（所有页面入口，需 token） |
-| `GET` | `/api/v1/novels/read` | 文本阅读器（选书、选章节、翻页，需 token） |
-| `GET` | `/api/v1/novels/files` | 文件管理页面（分页浏览、下载、删除，需 token） |
+| `GET` | `/api/v1/novels/pages` | 索引页（所有页面入口，需 token） |
+| `GET` | `/api/v1/novels/read` | 文本阅读器（选书、翻页、设置，需 token） |
+| `GET` | `/api/v1/novels/files` | 文件管理页面（分页浏览、下载、删除、改名、改作者，需 token） |
 | `GET` | `/api/v1/novels/download` | 浏览器访问的远程下载页面 |
 | `GET` | `/api/v1/novels/{filename}/download` | 下载服务器文件（需 FILE_DOWNLOAD_ENABLED=true） |
 | `POST` | `/api/v1/novels/{filename}/delete` | 删除服务器文件（需 FILE_DOWNLOAD_ENABLED=true） |
+| `POST` | `/api/v1/novels/{filename}/hide` | 隐藏/取消隐藏文件 |
+| `POST` | `/api/v1/novels/{filename}/rename` | 重命名文件 |
+| `POST` | `/api/v1/novels/{filename}/author` | 修改作者信息 |
 | `GET` | `/api/v1/sources` | 列出可用搜索源 |
 | `GET` | `/api/v1/search` | 搜索书籍（?q=关键词&source=txt/rar/auto） |
 | `GET` | `/api/v1/search-page` | 浏览器搜索页面（搜索框+结果列表+一键下载） |
@@ -305,10 +321,30 @@ curl -o output.txt "http://localhost:8000/api/v1/novels/%E7%A4%BA%E4%BE%8B_%E6%B
 
 - **智能章节解析**：支持中文数字章节（第一章/第1章）、英文章节（Chapter 1）、数字序号、Markdown 标题等多种格式
 - **自动编码检测**：使用 chardet 自动识别文件编码，支持 UTF-8、GBK、GB2312、BIG5 等
+- **作者信息提取**：自动从书名（《书名》作者）、文件名、正文头部提取作者，支持手动修改并持久化
+- **拼音重命名**：下载/上传后可自动将中文文件名转为拼音（FILE_RENAME_PINYIN=true）
 - **路径穿越防护**：所有文件访问均做路径校验，确保安全
 - **防同名覆盖**：下载文件时若文件名已存在，自动追加 `(1)`、`(2)` 等序号
 - **下载大小限制**：通过配置限制单个下载文件的大小，防止资源滥用
 - **分片上传**：大文件自动切分为多个小块分批传输，支持断点续传，避免超时失败
+- **SSRF 防护**：远程下载仅允许公网地址（可配置允许内网）
+- **阅读进度持久化**：阅读位置自动保存，重新打开继续阅读
+
+---
+
+## 📖 浏览器阅读器
+
+访问 `/read`（或从索引页进入）打开在线阅读器，支持：
+
+- **书架列表**：按最近阅读排序，显示进度与作者
+- **自适应分页**：每页字数根据窗口大小和字号动态计算，无滚动条
+- **翻页方式**：左右两侧悬浮按钮 + 全页边缘点击热区（上/左=上一页，下/右=下一页），章首/章尾自动跨章
+- **阅读设置**：字号调节（12-32px）+ 5 种背景主题（护眼黄/纯白/暗黑/羊皮纸/墨绿），自动保存到 localStorage
+- **章节目录弹窗**：点击 📑 打开，自动定位当前章节
+- **进度恢复**：关闭页面后重新打开，从上次位置继续阅读
+- **移动端适配**：响应式布局、无滚动条、大点击热区，适合手机竖屏阅读
+
+> 手机浏览器访问 `http://<服务器IP>:8000/p/你的口令` 即可打开索引页，短链接方便输入。
 
 ---
 
@@ -320,10 +356,11 @@ curl -o output.txt "http://localhost:8000/api/v1/novels/%E7%A4%BA%E4%BE%8B_%E6%B
 
 | 方法 | 路径 | 参数 | 说明 |
 |------|------|------|------|
-| `GET` | `/getBookshelf` | 无 | 获取书架（文件列表） |
+| `GET` | `/getBookshelf` | 无 | 获取书架（文件列表，含作者） |
 | `GET` | `/getChapterList` | `?url={bookUrl}` | 获取章节目录 |
 | `GET` | `/getBookContent` | `?url={bookUrl}&index={n}` | 获取章节全文 |
 | `POST` | `/saveBookProgress` | JSON Body | 保存阅读进度 |
+| `POST` | `/saveBookProgressByChapter` | JSON Body | 按章节保存阅读进度 |
 
 所有响应均包装在统一格式中：
 ```json

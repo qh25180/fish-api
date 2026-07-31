@@ -4,7 +4,7 @@ import secrets
 import string
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
@@ -83,6 +83,21 @@ else:
 app.include_router(novels.router)
 app.include_router(legado.router)
 app.include_router(search.router)
+
+
+# ─── 短链接入口（方便手机/浏览器输入） ─────────────
+from app.routers.novels import _pages_index_html
+
+@app.get("/p", include_in_schema=False, response_class=HTMLResponse)
+async def short_pages_index(token: str | None = None):
+    """短链接索引页：/p?token=xxx 或 /p/xxx"""
+    return HTMLResponse(content=_pages_index_html(token))
+
+
+@app.get("/p/{token}", include_in_schema=False, response_class=HTMLResponse)
+async def short_pages_index_path(token: str):
+    """短链接索引页（token 放路径）：/p/xxx"""
+    return HTMLResponse(content=_pages_index_html(token))
 
 
 @app.get("/", tags=["root"])
