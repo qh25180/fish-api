@@ -1286,11 +1286,20 @@ _READER_STYLE = """
   .book-info { font-size: 13px; color: #888; margin-top: 4px; }
 
   /* 章节列表弹窗 */
-  .chapters-modal .chapters-list { max-height: 55vh; overflow-y: auto; border: 1px solid color-mix(in srgb, var(--text-color, #333) 15%, transparent); border-radius: 6px; margin: 8px 0; }
-  .chapters-modal .chapter-item { padding: 10px 14px; border-bottom: 1px solid color-mix(in srgb, var(--text-color, #333) 8%, transparent); cursor: pointer; font-size: 14px; }
+  .modal.chapters-modal { width: 460px; max-width: 94vw; }
+  .chapters-jump { display: flex; gap: 6px; margin: 8px 0; }
+  .chapters-jump input { flex: 1; padding: 8px 10px; font-size: 13px; border: 1px solid color-mix(in srgb, var(--text-color, #333) 20%, transparent); border-radius: 6px; background: transparent; color: var(--text-color, #333); }
+  .chapters-jump input:focus { outline: none; border-color: #007acc; }
+  .chapters-jump .jump-btn { padding: 8px 14px; background: #007acc; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; flex-shrink: 0; }
+  .chapters-jump .jump-btn:hover { background: #005999; }
+  /* 虚拟滚动：固定行高 + 内容绝对定位 */
+  .chapters-modal .chapters-list { position: relative; max-height: 55vh; min-height: 200px; overflow-y: auto; border: 1px solid color-mix(in srgb, var(--text-color, #333) 15%, transparent); border-radius: 6px; margin: 8px 0; }
+  .chapters-modal .chapter-item { position: absolute; left: 0; right: 0; height: 38px; line-height: 38px; padding: 0 14px 0 8px; border-bottom: 1px solid color-mix(in srgb, var(--text-color, #333) 8%, transparent); cursor: pointer; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
   .chapters-modal .chapter-item:last-child { border-bottom: none; }
   .chapters-modal .chapter-item:hover { background: color-mix(in srgb, var(--text-color, #333) 6%, transparent); }
   .chapters-modal .chapter-item.active { background: #007acc; color: #fff; }
+  .chapters-modal .chapter-item .ch-num { color: color-mix(in srgb, var(--text-color, #333) 45%, transparent); font-size: 12px; margin-right: 10px; display: inline-block; }
+  .chapters-modal .chapter-item.active .ch-num { color: rgba(255, 255, 255, 0.75); }
 
   /* 阅读区域 — 自适应无滚动，文本区域与页面同色（沉浸阅读） */
   .reader-wrap { flex: 1; position: relative; display: flex; align-items: stretch; min-height: 0; }
@@ -1477,6 +1486,10 @@ async def read_page(
   <div class="modal-overlay" id="chaptersModal">
     <div class="modal chapters-modal">
       <h3>章节目录</h3>
+      <div class="chapters-jump">
+        <input type="number" id="chapterJumpInput" min="1" placeholder="输入章节号跳转" onkeydown="if(event.key==='Enter') jumpToChapter()">
+        <button class="jump-btn" onclick="jumpToChapter()">跳转</button>
+      </div>
       <div class="chapters-list" id="chapterList"></div>
       <button class="btn-confirm" onclick="hideChapters()">关闭</button>
     </div>
@@ -1698,14 +1711,17 @@ async def read_page(
     loadBooks(); // 刷新列表（保持最近阅读排序）
   }};
 
-  // ─── 章节列表弹窗 ───────────────
+  // ─── 章节列表弹窗（虚拟滚动） ─────
+  const CH_ITEM_H = 38; // 每章固定行高（与 CSS 一致）
+  const CH_BUFFER = 8;  // 上下缓冲行数
+  let chScrollTop = 0;
+
   window.toggleChapterList = function() {{
     const modal = document.getElementById('chaptersModal');
     modal.classList.toggle('show');
     // 打开时滚动到当前章节
     if (modal.classList.contains('show')) {{
-      const cur = modal.querySelector('.chapter-item.active');
-      if (cur) cur.scrollIntoView({{ block: 'center' }});
+      scrollChaptersToCurrent();
     }}
   }};
 
@@ -1718,19 +1734,63 @@ async def read_page(
     if (e.target === this) hideChapters();
   }};
 
+  // 滚动到当前章节
+  function scrollChaptersToCurrent() {{
+    const list = document.getElementById('chapterList');
+    list.scrollTop = chapterIndex * CH_ITEM_H;
+  }}
+
+  // 虚拟滚动渲染：只渲染可视区 ± 缓冲
   function renderChapterList() {{
     const list = document.getElementById('chapterList');
+    if (!chapters.length) {{
+      list.innerHTML = '<div class="chapter-item" style="position:static">暂无章节</div>';
+      return;
+    }}
+    // 容器总高度（占位撑出滚动条）
+    const totalH = chapters.length * CH_ITEM_H;
+    // 重建：外层占位 + 内部可见区
     list.innerHTML = '';
-    chapters.forEach((ch, i) => {{
-      const div = document.createElement('div');
-      div.className = 'chapter-item' + (i === chapterIndex ? ' active' : '');
-      div.textContent = ch.title;
-      div.onclick = () => {{
-        chapterIndex = i; pageOffset = 0; hideChapters(); loadChapter();
-      }};
-      list.appendChild(div);
-    }});
+    const spacer = document.createElement('div');
+    spacer.style.height = totalH + 'px';
+    spacer.style.position = 'relative';
+    list.appendChild(spacer);
+
+    const render = () => {{
+      const scrollTop = list.scrollTop;
+      const vh = list.clientHeight;
+      const startIdx = Math.max(0, Math.floor(scrollTop / CH_ITEM_H) - CH_BUFFER);
+      const endIdx = Math.min(chapters.length, Math.ceil((scrollTop + vh) / CH_ITEM_H) + CH_BUFFER);
+      // 清理旧节点（保留 spacer）
+      spacer.querySelectorAll('.chapter-item').forEach(n => n.remove());
+      for (let i = startIdx; i < endIdx; i++) {{
+        const ch = chapters[i];
+        const div = document.createElement('div');
+        div.className = 'chapter-item' + (i === chapterIndex ? ' active' : '');
+        div.style.top = (i * CH_ITEM_H) + 'px';
+        div.innerHTML = '<span class="ch-num">' + (i + 1) + '</span><span class="ch-title">' + escHtml(ch.title) + '</span>';
+        div.onclick = () => {{
+          chapterIndex = i; pageOffset = 0; hideChapters(); loadChapter();
+        }};
+        spacer.appendChild(div);
+      }}
+    }};
+
+    list.onscroll = render; // 滚动时增量渲染
+    render();
   }}
+
+  // 按章节号跳转
+  window.jumpToChapter = function() {{
+    const input = document.getElementById('chapterJumpInput');
+    const n = parseInt(input.value, 10);
+    if (!n || n < 1 || n > chapters.length) {{
+      input.value = '';
+      input.placeholder = '请输入 1-' + chapters.length + ' 的章节号';
+      return;
+    }}
+    chapterIndex = n - 1; pageOffset = 0; hideChapters(); loadChapter();
+  }};
 
   async function loadChapter() {{
     if (chapterIndex < 0 || chapterIndex >= chapters.length) return;

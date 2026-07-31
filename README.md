@@ -346,7 +346,7 @@ curl -o output.txt "http://localhost:8000/api/v1/novels/%E7%A4%BA%E4%BE%8B_%E6%B
 - **自适应分页**：每页字数根据窗口大小和字号动态计算，无滚动条
 - **翻页方式**：左右两侧悬浮按钮 + 全页边缘点击热区（上/左=上一页，下/右=下一页），章首/章尾自动跨章
 - **阅读设置**：字号调节（12-32px）+ 5 种背景主题（护眼黄/纯白/暗黑/羊皮纸/墨绿），自动保存到 localStorage
-- **章节目录弹窗**：点击 📑 打开，自动定位当前章节
+- **章节目录弹窗**：点击 📑 打开，虚拟滚动（千章书仅渲染可视区节点，流畅不卡顿），自动定位当前章节，显示章节序号，支持输入章节号跳转
 - **进度恢复**：关闭页面后重新打开，从上次位置继续阅读
 - **移动端适配**：响应式布局、无滚动条、大点击热区，适合手机竖屏阅读
 
@@ -362,7 +362,7 @@ curl -o output.txt "http://localhost:8000/api/v1/novels/%E7%A4%BA%E4%BE%8B_%E6%B
 
 | 方法 | 路径 | 参数 | 说明 |
 |------|------|------|------|
-| `GET` | `/getBookshelf` | 无 | 获取书架（文件列表，含作者） |
+| `GET` | `/getBookshelf` | `?page=1&page_size=20`（可选分页） | 获取书架（文件列表，含作者，page_size=0 全量） |
 | `GET` | `/getChapterList` | `?url={bookUrl}` | 获取章节目录 |
 | `GET` | `/getBookContent` | `?url={bookUrl}&index={n}` | 获取章节全文 |
 | `POST` | `/saveBookProgress` | JSON Body | 保存阅读进度 |

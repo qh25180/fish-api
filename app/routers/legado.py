@@ -46,11 +46,18 @@ def fail(message: str, status_code: int = 400):
 
 
 @router.get("/getBookshelf")
-async def get_bookshelf(token: str | None = Query(None)):
-    """获取书架列表（本地文件列表 → Legado Book 格式）。"""
+async def get_bookshelf(
+    token: str | None = Query(None),
+    page: int = Query(1, ge=1, description="页码（可选分页）"),
+    page_size: int = Query(0, ge=0, description="每页数量，0 表示全量返回"),
+):
+    """获取书架列表（本地文件列表 → Legado Book 格式）。
+
+    可选分页：page + page_size（page_size=0 时全量返回，兼容插件调用）。
+    """
     _require_reader_token(token)
     try:
-        books = legado_service.get_bookshelf()
+        books = legado_service.get_bookshelf(page=page, page_size=page_size)
         return ok(books)
     except Exception as e:
         return fail(str(e), 500)

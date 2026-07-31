@@ -57,9 +57,15 @@ def _load_hidden_books() -> set:
         return set()
 
 
-def get_bookshelf() -> list[LegadoBook]:
-    """获取书架列表（所有文本文件 → LegadoBook 列表，排除隐藏书籍）。"""
-    files, _ = list_novel_files(page=1, page_size=9999)
+def get_bookshelf(page: int = 1, page_size: int = 0) -> list[LegadoBook]:
+    """获取书架列表（所有文本文件 → LegadoBook 列表，排除隐藏书籍）。
+
+    page/page_size 用于可选分页；page_size<=0 表示全量返回（默认，兼容现有调用）。
+    """
+    if page_size and page_size > 0:
+        files, _ = list_novel_files(page=page, page_size=page_size)
+    else:
+        files, _ = list_novel_files(page=1, page_size=9999)
     hidden = _load_hidden_books()
     return [_file_to_legado_book(f.filename, f.estimated_chapters)
             for f in files if Path(f.filename).stem not in hidden]
