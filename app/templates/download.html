@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#007acc">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="icon" type="image/png" href="/static/icons/icon-192.png">
 <title>远程下载</title>
 <link rel="stylesheet" href="/static/css/pages.css">
 <style>
@@ -30,5 +33,12 @@
   <button type="submit">下载</button>
   <div class="tip">支持 http:// 和 https:// 协议的 URL</div>
 </form>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/static/js/sw.js', { scope: '/' }).catch(() => {});
+  });
+}
+</script>
 </body>
 </html>

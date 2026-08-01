@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#007acc">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="icon" type="image/png" href="/static/icons/icon-192.png">
 <title>文件上传</title>
 <link rel="stylesheet" href="/static/css/pages.css">
 <style>
@@ -143,6 +146,13 @@
     }
   });
 })();
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/static/js/sw.js', { scope: '/' }).catch(() => {});
+  });
+}
 </script>
 </body>
 </html>

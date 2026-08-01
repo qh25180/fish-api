@@ -54,6 +54,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ─── Service-Worker-Allowed 头（允许 SW 从 /static/js/ 提升 scope 到 /） ──
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class ServiceWorkerHeaderMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        if request.url.path.endswith("sw.js"):
+            response.headers["Service-Worker-Allowed"] = "/"
+        return response
+
+app.add_middleware(ServiceWorkerHeaderMiddleware)
+
 # ─── Swagger 文档（默认关闭，DOCS_ENABLED=true 开启） ──
 def _doc_token_ok(request) -> bool:
     """文档页 token 校验：支持 Authorization Bearer 与 Cookie。"""
@@ -118,8 +130,18 @@ def _login_page_html(error: str = "") -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#007acc">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="icon" type="image/png" href="/static/icons/icon-192.png">
 <title>登录 - QHAPI</title>
 {_LOGIN_STYLE}
+<script>
+if ('serviceWorker' in navigator) {{
+  window.addEventListener('load', () => {{
+    navigator.serviceWorker.register('/static/js/sw.js', {{ scope: '/' }}).catch(() => {{}});
+  }});
+}}
+</script>
 </head>
 <body>
 <h2>🔐 登录</h2>
