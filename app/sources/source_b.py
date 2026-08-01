@@ -24,18 +24,18 @@ class SourceB(BaseSource):
         if not settings.source_b_enabled or not settings.source_b_url:
             return []
 
-        # 使用 Alist 搜索 API
-        url = f"{self._base()}/api/fs/search"
-        data = json.dumps({
+        # 使用 Alist 搜索 API。
+        # 注意：此后端对 POST /api/fs/search 返回 400（page can't < 1，body 未正确解析），
+        # 因此改用 GET + query 参数调用（Alist 的 g.Any 路由支持 GET）。
+        params = urllib.parse.urlencode({
             "parent": settings.source_b_path,
-            "name": keyword,
+            "keywords": keyword,
+            "scope": 2,  # 2 = 仅文件
             "page": 1,
             "per_page": 30,
-        }).encode()
-        req = urllib.request.Request(url, data=data, headers={
-            "User-Agent": "Mozilla/5.0",
-            "Content-Type": "application/json",
         })
+        url = f"{self._base()}/api/fs/search?{params}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:
                 d = json.loads(resp.read().decode())
@@ -49,6 +49,8 @@ class SourceB(BaseSource):
         seen = set()
         for item in d.get("data", {}).get("content", []):
             name = item.get("name", "")
+            if item.get("is_dir"):
+                continue
             if name not in seen:
                 seen.add(name)
                 size = item.get("size", 0)

@@ -1,5 +1,6 @@
 ﻿"""File service: scan, parse chapters, and extract text content."""
 
+import json
 import os
 import re
 import datetime
@@ -287,6 +288,15 @@ def list_novel_files(
     allowed_exts = settings.text_file_extensions_list
     files: list[NovelInfo] = []
 
+    # 读取进度文件中已保存的作者（修改作者功能写入 .legado_progress.json）
+    # 已保存的真实作者优先于从文件内容提取的结果，与 legado_service 逻辑保持一致
+    progress_path = novels_dir / ".legado_progress.json"
+    try:
+        progress = json.loads(progress_path.read_text(encoding="utf-8")) if progress_path.exists() else {}
+        progress = progress if isinstance(progress, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        progress = {}
+
     for f in sorted(novels_dir.iterdir()):
         if not f.is_file():
             continue
@@ -303,6 +313,11 @@ def list_novel_files(
 
         # Estimate chapters（仅读文件头 64KB 以提升性能）
         est_chapters, author = _estimate_chapters_and_author_from_head(f)
+
+        # 已保存的真实作者优先（修改作者后立即在列表生效）
+        saved_author = progress.get(f.stem, {}).get("author")
+        if saved_author and saved_author != "未知作者":
+            author = saved_author
 
         stat = f.stat()
         files.append(NovelInfo(
