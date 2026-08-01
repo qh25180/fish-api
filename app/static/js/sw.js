@@ -3,7 +3,7 @@
  * 策略：仅缓存静态资源（/static/，离线可用）；页面与 API 一律走网络
  * （页面含 token 注入、API 需实时数据，不能缓存，否则导致旧 JS/卡顿）。
  */
-const CACHE_NAME = 'qhapi-v2';
+const CACHE_NAME = 'qhapi-v3';
 const STATIC_ASSETS = [
   '/static/css/reader.css',
   '/static/css/index.css',
@@ -15,10 +15,14 @@ const STATIC_ASSETS = [
   '/static/icons/icon-512.png',
 ];
 
-// 安装：预缓存静态资源
+// 安装：逐个缓存静态资源，容忍单个失败（allSettled）
+// 修复：慢速网络下 cache.addAll 任一失败会导致 SW 卡在 installing，
+// PWA 启动画面（splash）一直停留。改为逐缓存 + 失败容忍，SW 总能快速激活。
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME)
+      .then((cache) => Promise.allSettled(STATIC_ASSETS.map((url) => cache.add(url))))
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -49,7 +53,7 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }
         return resp;
-      });
+      }).catch(() => Response.error());
     })
   );
 });

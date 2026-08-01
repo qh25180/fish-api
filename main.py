@@ -160,9 +160,15 @@ if ('serviceWorker' in navigator) {{
 
 @app.get("/login", include_in_schema=False, response_class=HTMLResponse)
 async def login_page(request: Request = None):
-    """登录页：已认证则跳转索引页 /api/v1/novels/pages，否则显示登录表单。"""
+    """登录页：已认证则返回 200 + JS 立即跳转（避免 PWA/WebView 启动时 302 卡住）。"""
     if request_token_ok(request):
-        return RedirectResponse(url="/api/v1/novels/pages", status_code=302)
+        return HTMLResponse(content="""<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>QHAPI</title>
+<style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f5f1eb;color:#666;}</style>
+<script>window.location.replace('/api/v1/novels/pages');</script>
+</head><body><div>正在进入…</div></body></html>""")
     return HTMLResponse(content=_login_page_html())
 
 
