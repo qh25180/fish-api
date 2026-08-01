@@ -60,9 +60,9 @@ body { font-family: var(--font-family, "Noto Serif SC", serif); background: var(
 .tap-zone { position: absolute; cursor: pointer; background: transparent; }
 /* 点击反馈：跟随主题文字色 10% 淡色，深浅主题均自然，几乎不干扰阅读 */
 .tap-zone:active, .tap-zone.tapping { background: rgba(128, 128, 128, 0.10); background: color-mix(in srgb, var(--text-color, #333) 10%, transparent); }
-.tap-zone-prev-top { left: 0; top: 0; width: 100%; height: 20%; min-height: 80px; z-index: 5; }
+.tap-zone-prev-top { left: 0; top: 0; width: 100%; height: 25%; min-height: 110px; z-index: 5; }
 .tap-zone-prev-left { left: 0; top: 0; width: 56px; height: 100%; z-index: 6; }
-.tap-zone-next-bottom { left: 0; bottom: 0; width: 100%; height: 20%; min-height: 80px; z-index: 5; }
+.tap-zone-next-bottom { left: 0; bottom: 0; width: 100%; height: 25%; min-height: 110px; z-index: 5; }
 .tap-zone-next-right { right: 0; top: 0; width: 56px; height: 100%; z-index: 6; }
 
 /* 设置弹窗 */

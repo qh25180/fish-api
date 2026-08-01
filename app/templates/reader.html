@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#007acc">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="icon" type="image/png" href="/static/icons/icon-192.png">
 <title>文本阅读</title>
 <link rel="stylesheet" href="/static/css/reader.css">
 </head>
@@ -413,6 +416,14 @@ window.QHAPI_CONFIG = { token: '{{ token }}' };
     const el = document.getElementById('readerText');
     if (!el || !el.clientHeight) { snippetLen = 500; return; }
     const remaining = chapterText.substring(pageOffset);
+    // 修复：剩余内容全为空白（章节尾部空行/空白）时，显示"本章完"，避免空白页
+    if (!remaining.trim()) {
+      el.textContent = '—— 本章完 ——';
+      document.getElementById('pageInfo').textContent = chapterText.length + ' / ' + chapterText.length + '字';
+      document.getElementById('btnPrevPage').disabled = (pageOffset <= 0 && chapterIndex <= 0);
+      document.getElementById('btnNextPage').disabled = (chapterIndex >= chapters.length - 1);
+      return;
+    }
     snippetLen = findMaxFit(remaining, el);
     const end = Math.min(pageOffset + snippetLen, chapterText.length);
     el.textContent = remaining.substring(0, snippetLen) || '（本章暂无内容）';
@@ -434,7 +445,9 @@ window.QHAPI_CONFIG = { token: '{{ token }}' };
   };
 
   window.nextPage = function() {
-    if (pageOffset + snippetLen >= chapterText.length) { nextChapter(); return; }
+    // 剩余内容为空（本章完状态）或已到章末 → 切下一章
+    const rest = chapterText.substring(pageOffset + snippetLen);
+    if (pageOffset + snippetLen >= chapterText.length || !rest.trim()) { nextChapter(); return; }
     pageOffset += snippetLen;
     pageHistory.push(pageOffset); // 记录新页起点
     reflowPage();
@@ -489,5 +502,12 @@ window.QHAPI_CONFIG = { token: '{{ token }}' };
 })();
 </script>
 {% endraw %}
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/static/js/sw.js', { scope: '/' }).catch(() => {});
+  });
+}
+</script>
 </body>
 </html>
