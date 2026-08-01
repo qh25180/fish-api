@@ -24,6 +24,7 @@ QHAPI 是基于 Python + FastAPI 构建的通用 API 服务。
 ```
 ├── app/
 │   ├── config.py              # 配置管理（pydantic-settings）
+│   ├── security.py            # 统一认证层（Bearer/Cookie 多通道验证）
 │   ├── models.py              # Pydantic 请求/响应模型
 │   ├── legado_models.py       # Legado HTTP API 兼容数据模型
 │   ├── sources/               # 搜索源插件体系
@@ -31,9 +32,19 @@ QHAPI 是基于 Python + FastAPI 构建的通用 API 服务。
 │   │   ├── source_a.py        # 源A（HTML 解析）
 │   │   └── source_b.py        # 源B（API）
 │   ├── routers/
-│   │   ├── novels.py          # 阅读 API 路由 + 浏览器页面
-│   │   ├── search.py          # 搜索 API + 搜索页面
+│   │   ├── novels.py          # 阅读 API 路由
+│   │   ├── search.py          # 搜索 API 路由
 │   │   └── legado.py          # Legado HTTP API 兼容路由
+│   ├── templates/             # 前端页面模板（Jinja2）
+│   │   ├── index.html         # 导航索引页
+│   │   ├── reader.html        # 文本阅读器
+│   │   ├── files.html         # 文件管理页
+│   │   ├── upload.html        # 上传页
+│   │   ├── download.html      # 远程下载页
+│   │   └── search.html        # 搜索页
+│   ├── static/                # 前端静态资源（CSS/JS）
+│   │   ├── css/               # 各页面样式
+│   │   └── js/                # qhapi.js 通用工具 + 各页面逻辑
 │   ├── services/
 │   │   ├── file_service.py    # 文件扫描、章节解析、文本提取、作者识别
 │   │   ├── download_service.py# URL 下载、防同名覆盖
@@ -76,20 +87,33 @@ docker compose logs -f
 
 启动后访问：
 
-- 服务地址：`http://<服务器IP>:8000`
-- API 文档：`http://<服务器IP>:8000/docs?token=你的API_TOKEN`（配置了口令时）
+- 服务地址：`http://<服务器IP>:8000`（未认证自动跳转 `/login` 输入口令）
+- 浏览器入口：访问任意页面 → 跳转 `/login` → 输入口令 → 写入 Cookie → 跳转索引页
+- API 文档：默认关闭（`DOCS_ENABLED=true` 开启后需认证访问 `/docs`）
 
 **数据持久化**：`novels/` 目录通过卷挂载映射到容器内 `/app/novels`，小说文件与 Legado 阅读进度（`.legado_progress.json`）均保存在宿主机，重启或重建容器不会丢失。
 
 **修改配置**：直接编辑 `.env` 后执行 `docker compose restart` 即可生效。若 `.env` 中口令为默认的 `qhapi-token`，容器首次启动会自动生成新口令并写回宿主 `.env`。
 
+**代码变更后重建容器**（改了 Python/HTML/CSS/JS 源码后需重新构建镜像，因为 `COPY . .` 打包了源码）：
+
+```bash
+# 从当前代码重新构建镜像并重启容器
+docker compose up -d --build
+
+# 或分开执行（先构建，再重启）
+docker compose build
+docker compose up -d
+```
+
 **常用命令**：
 
 ```bash
-docker compose down        # 停止并移除容器（数据保留在 ./novels）
-docker compose down -v     # 慎用：同时删除卷数据
-docker compose restart     # 修改配置后重启
-docker compose build       # 源码变更后重新构建镜像
+docker compose down          # 停止并移除容器（数据保留在 ./novels）
+docker compose down -v       # 慎用：同时删除卷数据
+docker compose restart       # 修改配置后重启（仅 .env 变更）
+docker compose up -d --build # 源码变更后重建镜像并启动
+docker compose logs -f       # 查看日志
 ```
 
 ### 1. 安装依赖
@@ -115,8 +139,9 @@ cp .env.example .env
 | `TEXT_FILE_EXTENSIONS` | `.txt,.md` | 允许的文件扩展名 |
 | `DEFAULT_ENCODING` | `auto` | 默认编码（auto 表示自动检测） |
 | `REMOTE_DOWNLOAD_ENABLED` | `false` | 是否启用远程拉取下载接口 |
-| `API_TOKEN` | `qhapi-token` | 通用 API 访问口令（留空则不验证） |
-| `READER_TOKEN_ENABLED` | `false` | 是否启用文本阅读页面（/read）及其操作的 token 验证 |
+| `API_TOKEN` | `qhapi-token` | 通用 API 访问口令（留空则不验证；除 Legado 外所有接口需验证，支持 Bearer/Cookie，URL 无 token） |
+| `DOCS_ENABLED` | `false` | Swagger 文档开关（默认关闭；开启后 /docs 需认证访问） |
+| `LEGADO_ENABLED` | `true` | Legado HTTP API 整体开关（默认开；关闭后相关接口返回 403，永不验证 token） |
 | `REMOTE_DOWNLOAD_ALLOW_INTRANET` | `false` | 是否允许远程下载内网地址的文件 |
 | `UPLOAD_ENABLED` | `false` | 是否启用文件上传接口 |
 | `UPLOAD_TIMEOUT_SECONDS` | `300` | 上传超时时间（秒） |
@@ -170,7 +195,7 @@ venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 300
 如果配置了 `API_TOKEN`，Swagger 文档页面需要传入 token 才能访问：
 
 ```
-http://<服务器IP>:8000/docs?token=你的API_TOKEN
+curl -H "Authorization: Bearer 你的API_TOKEN" http://<服务器IP>:8000/docs
 ```
 
 未配置 `API_TOKEN` 时直接访问 `/docs` 即可。
@@ -179,30 +204,60 @@ http://<服务器IP>:8000/docs?token=你的API_TOKEN
 
 ## Token 验证机制
 
-配置 `API_TOKEN` 后，以下接口需要验证 token：
+配置 `API_TOKEN` 后，除 **Legado 接口**外的所有 API 与页面均需验证 token。
 
-| 接口 | Token 传入方式 | 说明 |
-|------|---------------|------|
-| `POST /download`（远程拉取） | 请求体 `token` 字段 | 拉取 URL 文件到服务器 |
-| `POST /upload`（本地上传） | 表单 `token` 字段 | 上传本地文件到服务器 |
-| `GET /{filename}/download`（文件下载） | 查询参数 `?token=xxx` | 从服务器下载文件到本地 |
-| `GET /read`（文本阅读） | 查询参数 `?token=xxx` | 在线阅读文本（需 READER_TOKEN_ENABLED=true） |
-| `GET /getBookshelf` 等阅读器接口 | 查询参数 `?token=xxx` | 阅读器调用的书架/章节/内容/进度接口（需 READER_TOKEN_ENABLED=true） |
-| `GET /pages` 或 `/p`（导航索引） | 查询参数 `?token=xxx` | 页面入口索引 |
-| `GET /files`（文件管理） | 查询参数 `?token=xxx` | 浏览器文件管理页面 |
-| `POST /{filename}/delete`（文件删除） | 查询参数 `?token=xxx` | 删除服务器上的文件 |
-| `POST /{filename}/hide`（隐藏/取消隐藏） | 查询参数 `?token=xxx` | 隐藏或取消隐藏文件 |
-| `POST /{filename}/rename`（重命名） | 查询参数 `?token=xxx` | 重命名文件 |
-| `POST /batch-rename`（批量重命名） | 查询参数 `?token=xxx` | 按 `FILE_RENAME_MODE` 一键重命名所有未隐藏小说 |
-| `POST /{filename}/author`（修改作者） | 查询参数 `?token=xxx` | 修改作者信息 |
-| `GET /search`（书籍搜索） | 查询参数 `?token=xxx` | 搜索书籍 |
-| `GET /search-page`（搜索页面） | 查询参数 `?token=xxx` | 浏览器搜索页面 |
-| `GET /book-detail`（书籍详情） | 查询参数 `?token=xxx` | 获取书籍详情 |
-| `GET /books/download`（下载书籍） | 查询参数 `?token=xxx` | 通过搜索源下载书籍 |
-| `GET /docs`（Swagger 文档） | 查询参数 `?token=xxx` | 查看交互式 API 文档 |
+**Token 传递方式（任选其一）**：
 
-> 不需要 Token 的接口：文本文件列表、章节列表、内容读取、健康检查等纯读取接口。
-> 如 `API_TOKEN` 为空字符串，以上所有验证跳过。
+| 通道 | 形式 | 适用场景 |
+|------|------|---------|
+| `Authorization` 头 | `Authorization: Bearer <token>` | 外部工具（curl/脚本）与浏览器 JS（推荐） |
+| Cookie | `Cookie: qhapi_token=<token>` | 浏览器页面间跳转与表单提交（URL 干净） |
+| 登录页 | `POST /login`（表单 token 字段） | 浏览器首次认证（写入 Cookie 后跳转索引页） |
+
+> URL 查询参数 `?token=` 与路径入口 `/p/<token>` **均已移除**。浏览器访问任意受保护页面 → 自动跳转 `/login` 输入口令 → 写入 Cookie；外部工具使用 `Authorization: Bearer` 头。
+
+**需验证 token 的接口**：
+
+| 接口 | 说明 |
+|------|------|
+| `GET /api/v1/novels`（列表） | 列出文本文件 |
+| `GET /api/v1/novels/{filename}/chapters` 等 | 章节列表 / 章节内容 / 内容读取 |
+| `GET /api/v1/novels/files`（文件管理页） | 分页浏览、下载、删除、改名、改作者、一键重命名 |
+| `GET /api/v1/novels/read`（阅读器页） | 在线阅读 |
+| `GET /api/v1/novels/upload`、`/download`（页面） | 上传页 / 远程下载页 |
+| `POST /api/v1/novels/upload*`（上传系列） | 单次/分片上传、取消（含 UUID 校验防路径穿越） |
+| `POST /api/v1/novels/{filename}/delete` 等写接口 | 删除 / 隐藏 / 重命名 / 批量重命名 / 改作者 |
+| `POST /api/v1/novels/download`（远程拉取） | 从 URL 下载 |
+| `GET /api/v1/search*`、`/books/download` | 搜索 / 搜索页 / 书籍详情 / 下载书籍 |
+| `GET /pages`、`/`、`/login`、`/docs`、`/openapi.json` | 页面入口、登录与文档 |
+
+**不需要 token 的接口（Legado 外部协议）**：
+
+| 接口 | 说明 |
+|------|------|
+| `GET /getBookshelf` | 书架列表（Legado App / VS Code 插件调用） |
+| `GET /getChapterList` | 章节列表 |
+| `GET /getBookContent` | 章节内容 |
+| `POST /saveBookProgress`、`/saveBookProgressByChapter` | 保存阅读进度 |
+| `GET /health` | 健康检查 |
+
+> Legado 接口**永不验证 token**（保持外部工具兼容），只受 `LEGADO_ENABLED` 开关控制（默认开启）；关闭后返回 403「未开放」。
+> 如 `API_TOKEN` 为空字符串，所有非 Legado 验证跳过。
+
+### 登录与登出（浏览器）
+
+| 接口 | 说明 |
+|------|------|
+| `GET /login` | 登录页（已登录自动跳转索引页） |
+| `POST /login` | 提交口令（表单 `token` 字段），成功后写入 Cookie 并跳转 |
+| `GET /logout` | 退出登录：清除 Cookie，跳转登录页 |
+
+**浏览器使用流程**：
+1. 访问任意受保护页面（或根路径 `/`）→ 自动跳转 `/login`
+2. 输入口令 → 提交 → 写入 Cookie → 跳转索引页 `/api/v1/novels/pages`
+3. 页面右上角 / 导航页左上角有退出按钮，点击后清除 Cookie 返回登录页
+
+**外部工具（curl/脚本）**：使用 `Authorization: Bearer <token>` 头，无需登录流程。
 
 ---
 
@@ -210,8 +265,10 @@ http://<服务器IP>:8000/docs?token=你的API_TOKEN
 
 | 方法 | 路径 | 功能 |
 |------|------|------|
-| `GET` | `/p` | 短链接索引页（?token=xxx） |
-| `GET` | `/p/{token}` | 短链接索引页（token 放路径，手机方便输入） |
+| `GET` | `/login` | 登录页（输入口令，写入 Cookie） |
+| `POST` | `/login` | 登录提交（表单 token 字段，成功后跳转） |
+| `GET` | `/logout` | 退出登录（清除 Cookie，跳转登录页） |
+| `GET` | `/` | 根路径（未认证跳转 /login，已认证跳转索引页） |
 | `GET` | `/api/v1/novels` | 列出所有文本文件（分页 + 扩展名过滤 + 作者） |
 | `GET` | `/api/v1/novels/{filename}/chapters` | 获取文件的章节列表 |
 | `GET` | `/api/v1/novels/{filename}/chapters/{chapter_number}` | 按章节获取内容（支持章节内偏移） |
@@ -240,7 +297,7 @@ http://<服务器IP>:8000/docs?token=你的API_TOKEN
 
 > **Token 验证说明**：如果配置了 `API_TOKEN`，上传/下载/远程拉取接口需传入匹配的 `token`（未配置或为空则跳过验证）。默认令牌首次启动时会自动生成并输出到控制台。
 
-> **Swagger 文档**：需传入 `?token=xxx` 访问 `/docs`。
+> **Swagger 文档**：默认关闭（`DOCS_ENABLED=true` 开启）；浏览器经 `/login` 认证后用 Cookie 访问 `/docs`；curl 加 `Authorization: Bearer` 头。
 
 ### 定位方式一览
 
@@ -351,17 +408,17 @@ curl -X POST http://localhost:8000/api/v1/novels/download \
 
 **文件管理页面（需开启 FILE_DOWNLOAD_ENABLED=true）：**
 ```bash
-# 浏览器访问（需传入 token）
-# http://<服务器IP>:8000/api/v1/novels/files?token=你的口令
+# 浏览器访问（经 /login 认证后 Cookie 自动携带，或直接访问）
+# http://<服务器IP>:8000/api/v1/novels/files
 ```
 
 **下载服务器文件到本地（需开启 FILE_DOWNLOAD_ENABLED=true）：**
 ```bash
-# 浏览器直接访问
-# http://<服务器IP>:8000/api/v1/novels/示例_江南烟雨.txt/download?token=你的口令
+# 浏览器直接访问（经 /login 认证后 Cookie 自动携带）
+# http://<服务器IP>:8000/api/v1/novels/示例_江南烟雨.txt/download
 
-# curl 下载
-curl -o output.txt "http://localhost:8000/api/v1/novels/%E7%A4%BA%E4%BE%8B_%E6%B1%9F%E5%8D%97%E7%83%9F%E9%9B%A8.txt/download?token=你的口令"
+# curl 下载（使用 Bearer 头）
+curl -H "Authorization: Bearer 你的口令" -o output.txt "http://localhost:8000/api/v1/novels/%E7%A4%BA%E4%BE%8B_%E6%B1%9F%E5%8D%97%E7%83%9F%E9%9B%A8.txt/download"
 ```
 
 ## 功能特性
@@ -391,7 +448,7 @@ curl -o output.txt "http://localhost:8000/api/v1/novels/%E7%A4%BA%E4%BE%8B_%E6%B
 - **进度恢复**：关闭页面后重新打开，从上次位置继续阅读
 - **移动端适配**：响应式布局、无滚动条、大点击热区，适合手机竖屏阅读
 
-> 手机浏览器访问 `http://<服务器IP>:8000/p/你的口令` 即可打开索引页，短链接方便输入。
+> 手机浏览器访问 `http://<服务器IP>:8000/login` 输入口令即可进入索引页，简单方便。
 
 ---
 

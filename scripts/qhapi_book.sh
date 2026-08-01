@@ -33,11 +33,11 @@ SOURCE="a"
 
 # 搜索
 echo "🔍 搜索: $KEYWORD (源: $SOURCE)"
-TOKEN_ARG=""
-[ -n "$TOKEN" ] && TOKEN_ARG="&token=$TOKEN"
+AUTH_ARG=()
+[ -n "$TOKEN" ] && AUTH_ARG=(-H "Authorization: Bearer $TOKEN")
 
 SEARCH_URL="${BASE}/api/v1/search?q=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${KEYWORD}'))")&source=${SOURCE}"
-RESP=$(curl -s "$SEARCH_URL")
+RESP=$(curl -s "${AUTH_ARG[@]}" "$SEARCH_URL")
 
 TOTAL=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('total',0))" 2>/dev/null)
 if [ "$TOTAL" = "0" ] || [ -z "$TOTAL" ]; then
@@ -74,8 +74,8 @@ if 0 <= i < len(d['results']):
 [ -z "$BOOK_ID" ] && echo "❌ 无效选择" && exit 1
 
 echo "⬇️  下载中..."
-DOWNLOAD_URL="${BASE}/api/v1/books/download?book_id=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${BOOK_ID}'))")&source=${SOURCE}${TOKEN_ARG}"
-DL_RESP=$(curl -s "$DOWNLOAD_URL")
+DOWNLOAD_URL="${BASE}/api/v1/books/download?book_id=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${BOOK_ID}'))")&source=${SOURCE}"
+DL_RESP=$(curl -s "${AUTH_ARG[@]}" "$DOWNLOAD_URL")
 
 SUCCESS=$(echo "$DL_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('success',False))" 2>/dev/null)
 if [ "$SUCCESS" = "True" ]; then
