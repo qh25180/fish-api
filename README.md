@@ -49,10 +49,48 @@ QHAPI 是基于 Python + FastAPI 构建的通用 API 服务。
 ├── main.py                    # 应用入口
 ├── requirements.txt           # Python 依赖
 ├── .env.example               # 配置模板
+├── Dockerfile                 # 容器镜像构建
+├── .dockerignore              # 构建上下文排除清单
+├── docker-compose.yml         # Docker Compose 编排
 └── README.md
 ```
 
 ## 快速开始
+
+### 0. 使用 Docker 一键部署（推荐）
+
+无需手动安装 Python 依赖，一条命令即可从项目直接构建并启动容器（需已安装 Docker 与 Docker Compose 插件）：
+
+```bash
+# 1. 准备配置（首次）
+cp .env.example .env
+
+# 2. 构建镜像并启动容器
+cd /usr/local/code/fish-api
+docker compose up -d
+
+# 3. 查看运行状态与日志
+docker compose ps
+docker compose logs -f
+```
+
+启动后访问：
+
+- 服务地址：`http://<服务器IP>:8000`
+- API 文档：`http://<服务器IP>:8000/docs?token=你的API_TOKEN`（配置了口令时）
+
+**数据持久化**：`novels/` 目录通过卷挂载映射到容器内 `/app/novels`，小说文件与 Legado 阅读进度（`.legado_progress.json`）均保存在宿主机，重启或重建容器不会丢失。
+
+**修改配置**：直接编辑 `.env` 后执行 `docker compose restart` 即可生效。若 `.env` 中口令为默认的 `qhapi-token`，容器首次启动会自动生成新口令并写回宿主 `.env`。
+
+**常用命令**：
+
+```bash
+docker compose down        # 停止并移除容器（数据保留在 ./novels）
+docker compose down -v     # 慎用：同时删除卷数据
+docker compose restart     # 修改配置后重启
+docker compose build       # 源码变更后重新构建镜像
+```
 
 ### 1. 安装依赖
 
@@ -84,7 +122,8 @@ cp .env.example .env
 | `UPLOAD_TIMEOUT_SECONDS` | `300` | 上传超时时间（秒） |
 | `UPLOAD_CHUNK_SIZE_KB` | `512` | 分片上传每片大小（KB） |
 | `FILE_DOWNLOAD_ENABLED` | `false` | 是否启用文件下载接口 |
-| `FILE_RENAME_PINYIN` | `false` | 下载/上传后自动转拼音文件名 |
+| `FILE_RENAME_MODE` | `0` | 重命名模式：0=不重命名，1=小说名拼音，2=中文小说名，3=中文小说名-中文作者 |
+| `FILE_RENAME_PINYIN` | `false` | 旧配置（兼容）：true 等价于 `FILE_RENAME_MODE=1` |
 | `SOURCE_A_ENABLED` | `false` | 是否启用源A |
 | `SOURCE_A_URL` | `""` | 源A URL |
 | `SOURCE_B_ENABLED` | `false` | 是否启用源B |
@@ -154,6 +193,7 @@ http://<服务器IP>:8000/docs?token=你的API_TOKEN
 | `POST /{filename}/delete`（文件删除） | 查询参数 `?token=xxx` | 删除服务器上的文件 |
 | `POST /{filename}/hide`（隐藏/取消隐藏） | 查询参数 `?token=xxx` | 隐藏或取消隐藏文件 |
 | `POST /{filename}/rename`（重命名） | 查询参数 `?token=xxx` | 重命名文件 |
+| `POST /batch-rename`（批量重命名） | 查询参数 `?token=xxx` | 按 `FILE_RENAME_MODE` 一键重命名所有未隐藏小说 |
 | `POST /{filename}/author`（修改作者） | 查询参数 `?token=xxx` | 修改作者信息 |
 | `GET /search`（书籍搜索） | 查询参数 `?token=xxx` | 搜索书籍 |
 | `GET /search-page`（搜索页面） | 查询参数 `?token=xxx` | 浏览器搜索页面 |
@@ -184,12 +224,13 @@ http://<服务器IP>:8000/docs?token=你的API_TOKEN
 | `GET` | `/api/v1/novels/upload` | 浏览器访问的上传页面 |
 | `GET` | `/api/v1/novels/pages` | 索引页（所有页面入口，需 token） |
 | `GET` | `/api/v1/novels/read` | 文本阅读器（选书、翻页、设置，需 token） |
-| `GET` | `/api/v1/novels/files` | 文件管理页面（分页浏览、下载、删除、改名、改作者，需 token） |
+| `GET` | `/api/v1/novels/files` | 文件管理页面（分页浏览、下载、删除、改名、改作者、一键重命名，需 token） |
 | `GET` | `/api/v1/novels/download` | 浏览器访问的远程下载页面 |
 | `GET` | `/api/v1/novels/{filename}/download` | 下载服务器文件（需 FILE_DOWNLOAD_ENABLED=true） |
 | `POST` | `/api/v1/novels/{filename}/delete` | 删除服务器文件（需 FILE_DOWNLOAD_ENABLED=true） |
 | `POST` | `/api/v1/novels/{filename}/hide` | 隐藏/取消隐藏文件 |
 | `POST` | `/api/v1/novels/{filename}/rename` | 重命名文件 |
+| `POST` | `/api/v1/novels/batch-rename` | 按 `FILE_RENAME_MODE` 配置一键批量重命名所有未隐藏小说 |
 | `POST` | `/api/v1/novels/{filename}/author` | 修改作者信息 |
 | `GET` | `/api/v1/sources` | 列出可用搜索源 |
 | `GET` | `/api/v1/search` | 搜索书籍（?q=关键词&source=txt/rar/auto） |
