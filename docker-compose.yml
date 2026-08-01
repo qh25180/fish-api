@@ -1,0 +1,31 @@
+# ─── QHAPI Docker Compose ────────────────────────────────────────
+# 使用方式（在项目根目录）：
+#   docker compose up -d          # 构建并启动
+#   docker compose logs -f        # 查看日志
+#   docker compose down           # 停止并移除容器（数据保留在 ./novels）
+#
+# 首次使用请先复制配置模板：
+#   cp .env.example .env
+# 并按需修改 .env（API_TOKEN、TEXT_FILES_DIR 等），详见 README.md。
+
+services:
+  qhapi:
+    build: .
+    container_name: qhapi
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    # 将宿主 .env 全部配置注入容器（对应 app/config.py 的 Settings 字段）
+    env_file:
+      - .env
+    volumes:
+      # 数据持久化：小说文本文件 + Legado 阅读进度（.legado_progress.json）
+      - ./novels:/app/novels
+      # 可写挂载 .env：main.py 检测到默认口令 qhapi-token 时自动生成新口令并写回
+      - ./.env:/app/.env
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
