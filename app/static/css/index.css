@@ -1,0 +1,20 @@
+/* QHAPI 导航索引页样式（从 novels.py 内联抽取） */
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }
+/* 顶部栏：标题 + 退出按钮（风格参考阅读页 icon-btn） */
+.topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.topbar-title { font-size: 20px; font-weight: bold; }
+.topbar-logout { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid #ccc; border-radius: 6px; background: transparent; cursor: pointer; font-size: 16px; color: #555; transition: background 0.15s; text-decoration: none; }
+.topbar-logout:hover { background: #e9ecef; }
+.msg { padding: 12px; border-radius: 4px; margin-bottom: 16px; }
+.msg.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+.card { display: block; border: 1px solid #ddd; border-radius: 8px; padding: 18px 20px; margin-bottom: 12px; text-decoration: none; color: inherit; background: #fafafa; transition: background 0.15s; }
+.card:hover { background: #e9ecef; }
+.card-title { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
+.card-desc { font-size: 13px; color: #666; }
+@media (max-width: 720px) {
+  body { margin: 20px auto; padding: 0 12px; }
+  .topbar-title { font-size: 18px; }
+  .topbar-logout { width: 28px; height: 28px; font-size: 14px; }
+  .card { padding: 14px 16px; }
+}

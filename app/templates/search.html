@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>书籍搜索</title>
+<link rel="stylesheet" href="/static/css/search.css">
+<script>window.QHAPI_CONFIG = { token: '{{ token }}' };</script>
+</head>
+<body>
+<div style="margin-bottom:12px"><a href="/api/v1/novels/pages" style="color:#007acc;text-decoration:none;font-size:14px;">← 返回索引</a></div>
+<h2>[书籍搜索]</h2>
+<div class="search-box">
+  <input type="text" id="keyword" placeholder="输入书名或作者关键词">
+  <select id="sourceSelect">
+    {% for src in sources %}<option value="{{ src.name }}">{{ src.title }}</option>
+    {% endfor %}
+  </select>
+  <button id="searchBtn">搜索</button>
+</div>
+<div id="status"></div>
+<div id="results"></div>
+<script src="/static/js/qhapi.js"></script>
+<script src="/static/js/search.js"></script>
+</body>
+</html>

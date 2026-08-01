@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>导航</title>
+<link rel="stylesheet" href="/static/css/index.css">
+</head>
+<body>
+<div class="topbar">
+  <span class="topbar-title">📑 导航</span>
+  <a href="/logout" class="topbar-logout" title="退出登录">⏻</a>
+</div>
+{% for title, desc, href in pages %}
+<a class="card" href="{{ href }}">
+<div class="card-title">{{ title }}</div>
+<div class="card-desc">{{ desc }}</div>
+</a>
+{% endfor %}
+</body>
+</html>

@@ -1,0 +1,97 @@
+/* QHAPI 文本阅读器样式（从 novels.py 内联抽取） */
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; overflow: hidden; }
+body { font-family: var(--font-family, "Noto Serif SC", serif); background: var(--bg-color, #f5f1eb); color: var(--text-color, #333); }
+.container { max-width: 900px; margin: 0 auto; padding: 10px 20px; height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+.header { display: flex; align-items: center; padding: 8px 0; border-bottom: 1px solid #ddd; gap: 8px; flex-shrink: 0; }
+.header .book-name { flex: 1; font-size: 16px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.header .page-stat { font-size: 12px; color: #999; white-space: nowrap; margin-right: 8px; }
+.header .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid #ccc; border-radius: 6px; background: transparent; cursor: pointer; font-size: 16px; color: #555; transition: background 0.15s; text-decoration: none; flex-shrink: 0; }
+.header .icon-btn:hover { background: #e9ecef; }
+
+/* 选书列表 */
+.book-list { list-style: none; margin-top: 16px; }
+.book-item { padding: 14px 16px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; cursor: pointer; background: var(--card-bg, #fff); transition: background 0.15s; }
+.book-item:hover { background: #e9ecef; }
+.book-name-lg { font-size: 16px; font-weight: bold; }
+.book-info { font-size: 13px; color: #888; margin-top: 4px; }
+
+/* 章节列表弹窗 */
+.modal.chapters-modal { width: 460px; max-width: 94vw; }
+.chapters-jump { display: flex; gap: 6px; margin: 8px 0; }
+.chapters-jump input { flex: 1; padding: 8px 10px; font-size: 13px; border: 1px solid color-mix(in srgb, var(--text-color, #333) 20%, transparent); border-radius: 6px; background: transparent; color: var(--text-color, #333); }
+.chapters-jump input:focus { outline: none; border-color: #007acc; }
+.chapters-jump .jump-btn { padding: 8px 14px; background: #007acc; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; flex-shrink: 0; }
+.chapters-jump .jump-btn:hover { background: #005999; }
+/* 虚拟滚动：固定行高 + 内容绝对定位 */
+.chapters-modal .chapters-list { position: relative; max-height: 55vh; min-height: 200px; overflow-y: auto; border: 1px solid color-mix(in srgb, var(--text-color, #333) 15%, transparent); border-radius: 6px; margin: 8px 0; }
+.chapters-modal .chapter-item { position: absolute; left: 0; right: 0; height: 38px; line-height: 38px; padding: 0 14px 0 8px; border-bottom: 1px solid color-mix(in srgb, var(--text-color, #333) 8%, transparent); cursor: pointer; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
+.chapters-modal .chapter-item:last-child { border-bottom: none; }
+.chapters-modal .chapter-item:hover { background: color-mix(in srgb, var(--text-color, #333) 6%, transparent); }
+.chapters-modal .chapter-item.active { background: #007acc; color: #fff; }
+.chapters-modal .chapter-item .ch-num { color: color-mix(in srgb, var(--text-color, #333) 45%, transparent); font-size: 12px; margin-right: 10px; display: inline-block; }
+.chapters-modal .chapter-item.active .ch-num { color: rgba(255, 255, 255, 0.75); }
+
+/* 阅读区域 — 自适应无滚动，文本区域与页面同色（沉浸阅读） */
+.reader-wrap { flex: 1; position: relative; display: flex; align-items: stretch; min-height: 0; }
+.reader { background: var(--bg-color, #f5f1eb); border-radius: 6px; padding: 20px 30px; flex: 1; display: flex; flex-direction: column; overflow: hidden; margin: 8px 0; }
+.reader-title { font-size: calc(var(--font-size, 17px) + 2px); font-weight: bold; text-align: center; margin-bottom: 10px; color: color-mix(in srgb, var(--text-color, #333) 60%, transparent); flex-shrink: 0; }
+.reader-text { flex: 1; overflow: hidden; font-size: var(--font-size, 17px); line-height: var(--line-height, 1.9); white-space: pre-wrap; word-wrap: break-word; }
+
+/* 章节加载中提示 */
+.reader-loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: color-mix(in srgb, var(--text-color, #333) 55%, transparent); font-size: 14px; z-index: 20; pointer-events: none; }
+.spinner { width: 28px; height: 28px; border: 3px solid color-mix(in srgb, var(--text-color, #333) 20%, transparent); border-top-color: var(--text-color, #333); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* 导航按钮悬浮两侧 — 竖排窄条，卡片全宽不留白 */
+.nav-left, .nav-right { position: absolute; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 10; }
+.nav-left { left: 4px; }
+.nav-right { right: 4px; }
+.nav-btn { width: 28px; padding: 12px 3px; border: none; border-radius: 10px;
+  background: rgba(128, 128, 128, 0.35); color: #fff; cursor: pointer;
+  font-size: 12px; letter-spacing: 3px;
+  writing-mode: vertical-rl; text-orientation: upright;
+  opacity: 0.55; transition: opacity 0.2s; }
+.nav-btn:hover { opacity: 1; }
+.nav-btn:disabled { opacity: 0.15; cursor: not-allowed; }
+.nav-btn .nav-icon { display: none; }
+
+/* 大范围点击热区 — 上方整行+左侧整列=上一页；下方整行+右侧整列=下一页 */
+.tap-zone { position: absolute; cursor: pointer; background: transparent; }
+/* 点击反馈：跟随主题文字色 10% 淡色，深浅主题均自然，几乎不干扰阅读 */
+.tap-zone:active, .tap-zone.tapping { background: rgba(128, 128, 128, 0.10); background: color-mix(in srgb, var(--text-color, #333) 10%, transparent); }
+.tap-zone-prev-top { left: 0; top: 0; width: 100%; height: 20%; min-height: 80px; z-index: 5; }
+.tap-zone-prev-left { left: 0; top: 0; width: 56px; height: 100%; z-index: 6; }
+.tap-zone-next-bottom { left: 0; bottom: 0; width: 100%; height: 20%; min-height: 80px; z-index: 5; }
+.tap-zone-next-right { right: 0; top: 0; width: 56px; height: 100%; z-index: 6; }
+
+/* 设置弹窗 */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000; align-items: center; justify-content: center; }
+.modal-overlay.show { display: flex; }
+.modal { background: var(--card-bg, #fff); color: var(--text-color, #333); border-radius: 12px; padding: 24px; width: 340px; max-width: 90vw; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+.modal h3 { margin-bottom: 16px; font-size: 16px; }
+.modal label { display: block; margin: 12px 0 4px; font-size: 13px; color: #666; }
+.modal input[type=range] { width: 100%; }
+.modal .range-val { text-align: center; font-size: 16px; margin-top: 4px; }
+.color-presets { display: flex; gap: 8px; margin: 8px 0; }
+.color-presets button { width: 40px; height: 40px; border-radius: 8px; border: 2px solid transparent; cursor: pointer; }
+.color-presets button.active { border-color: #007acc; }
+.modal .btn-confirm { display: block; width: 100%; margin-top: 16px; padding: 10px; background: #007acc; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 15px; }
+.modal .btn-confirm:hover { background: #005999; }
+
+/* 底部留白 */
+.footer-spacer { flex-shrink: 0; height: 20px; }
+
+.loading { text-align: center; padding: 40px; color: #888; }
+.status { text-align: center; color: #888; padding: 40px; font-size: 14px; }
+
+@media (max-width: 720px) {
+  .container { padding: 8px 10px; }
+  .nav-left { left: 2px; }
+  .nav-right { right: 2px; }
+  /* 移动端：同样竖排文字，更窄更小 */
+  .nav-btn { width: 20px; padding: 10px 2px; font-size: 10px; letter-spacing: 2px;
+    border-radius: 8px; background: rgba(128, 128, 128, 0.35); }
+  .tap-zone-prev-left, .tap-zone-next-right { width: 48px; }
+  .reader { padding: 12px 24px; margin: 8px 0; }
+}

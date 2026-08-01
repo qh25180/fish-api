@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>文本阅读</title>
+<link rel="stylesheet" href="/static/css/reader.css">
+</head>
+<body>
+<div class="container">
+  <!-- 顶部栏 -->
+  <div class="header">
+    <span class="book-name" id="headerTitle">[文本阅读]</span>
+    <span class="page-stat" id="pageInfo"></span>
+    <button class="icon-btn" id="btnSettings" onclick="showSettings()" title="阅读设置">⚙️</button>
+    <button class="icon-btn" id="btnChapters" onclick="toggleChapterList()" title="章节目录" style="display:none">📑</button>
+    <button class="icon-btn" id="btnBack" onclick="backToBooks()" title="返回书架">✕</button>
+  </div>
+
+  <!-- 选书 -->
+  <div id="bookView" style="flex:1;overflow-y:auto;">
+    <div class="loading" id="bookLoading">加载书架...</div>
+    <ul class="book-list" id="bookList" style="display:none"></ul>
+  </div>
+
+  <!-- 阅读区 -->
+  <div id="readerView" style="display:none;flex:1;flex-direction:column;min-height:0;">
+    <div class="reader-wrap" style="flex:1;position:relative;">
+      <div class="nav-left">
+        <button class="nav-btn" id="btnPrevPage" onclick="prevPage()" disabled><span class="nav-icon">◀</span><span class="nav-txt">上一页</span></button>
+      </div>
+      <!-- 点击热区：上方整行+左侧整列=上一页；下方整行+右侧整列=下一页 -->
+      <div class="tap-zone tap-zone-prev-top" onclick="prevPage()" title="上一页"></div>
+      <div class="tap-zone tap-zone-prev-left" onclick="prevPage()" title="上一页"></div>
+      <div class="tap-zone tap-zone-next-bottom" onclick="nextPage()" title="下一页"></div>
+      <div class="tap-zone tap-zone-next-right" onclick="nextPage()" title="下一页"></div>
+      <div class="reader">
+        <div class="reader-title" id="readerTitle"></div>
+        <div class="reader-text" id="readerText"></div>
+        <!-- 章节加载中提示 -->
+        <div class="reader-loading" id="readerLoading" style="display:none">
+          <div class="spinner"></div>
+          <span>章节加载中...</span>
+        </div>
+      </div>
+      <div class="nav-right">
+        <button class="nav-btn" id="btnNextPage" onclick="nextPage()" disabled><span class="nav-txt">下一页</span><span class="nav-icon">▶</span></button>
+      </div>
+    </div>
+  </div>
+  <div class="footer-spacer"></div>
+</div>
+
+<!-- 设置弹窗 -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal">
+    <h3>阅读设置</h3>
+    <label for="fontSizeSlider">字号</label>
+    <input type="range" id="fontSizeSlider" min="12" max="32" value="17">
+    <div class="range-val" id="fontSizeVal">17px</div>
+    <label>背景</label>
+    <div class="color-presets" id="colorPresets"></div>
+    <button class="btn-confirm" onclick="applySettings()">确定</button>
+  </div>
+</div>
+
+  <!-- 章节列表弹窗 -->
+  <div class="modal-overlay" id="chaptersModal">
+    <div class="modal chapters-modal">
+      <h3>章节目录</h3>
+      <div class="chapters-jump">
+        <input type="number" id="chapterJumpInput" min="1" placeholder="输入章节号跳转" onkeydown="if(event.key==='Enter') jumpToChapter()">
+        <button class="jump-btn" onclick="jumpToChapter()">跳转</button>
+      </div>
+      <div class="chapters-list" id="chapterList"></div>
+      <button class="btn-confirm" onclick="hideChapters()">关闭</button>
+    </div>
+  </div>
+
+<script>
+window.QHAPI_CONFIG = { token: '{{ token }}' };
+</script>
+{% raw %}
+<script>
+(function() {
+  const BASE = '/api/v1/novels';
+  const TOKEN = window.QHAPI_CONFIG.token || '';
+
+  // ─── 设置 ──────────────────────────
+  const THEMES = [
+    { name: '护眼黄', bg: '#f5f1eb', card: '#fff', text: '#333' },
+    { name: '纯白',   bg: '#ffffff', card: '#fff', text: '#333' },
+    { name: '暗黑',   bg: '#1a1a2e', card: '#16213e', text: '#e0e0e0' },
+    { name: '羊皮纸', bg: '#f4ecd8', card: '#faf3e6', text: '#4a3b32' },
+    { name: '墨绿',   bg: '#d4e6d8', card: '#e8f0e8', text: '#2d3a3a' },
+  ];
+  let settings = JSON.parse(localStorage.getItem('qhapi_reader_settings') || '{}');
+  if (!settings.fontSize) settings = { fontSize: 17, themeIndex: 0 };
+  let savedSettings = null;
+  let sliderTimer = null;
+  applyTheme(settings);
+
+  function applyTheme(s, save = true) {
+    const t = THEMES[s.themeIndex] || THEMES[0];
+    document.documentElement.style.setProperty('--font-size', s.fontSize + 'px');
+    document.documentElement.style.setProperty('--line-height', (s.fontSize > 22 ? 1.7 : 1.9));
+    document.documentElement.style.setProperty('--bg-color', t.bg);
+    document.documentElement.style.setProperty('--card-bg', t.card);
+    document.documentElement.style.setProperty('--text-color', t.text);
+    if (save) localStorage.setItem('qhapi_reader_settings', JSON.stringify(s));
+  }
+
+  // 等浏览器应用新样式后再重新分页
+  function reflowAfterTheme() {
+    if (!chapterText) return;
+    requestAnimationFrame(() => reflowPage());
+  }
+
+  window.showSettings = function() {
+    savedSettings = JSON.parse(JSON.stringify(settings));
+    const modal = document.getElementById('settingsModal');
+    modal.classList.add('show');
+    const slider = document.getElementById('fontSizeSlider');
+    slider.value = settings.fontSize;
+    document.getElementById('fontSizeVal').textContent = settings.fontSize + 'px';
+    const presets = document.getElementById('colorPresets');
+    presets.innerHTML = '';
+    THEMES.forEach((t, i) => {
+      const btn = document.createElement('button');
+      btn.style.background = t.bg;
+      btn.style.borderColor = t.bg;
+      if (i === settings.themeIndex) btn.classList.add('active');
+      btn.title = t.name;
+      btn.onclick = () => {
+        presets.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        settings.themeIndex = i;
+        applyTheme(settings, false); // 实时预览背景色
+      };
+      presets.appendChild(btn);
+    });
+    slider.oninput = function() {
+      document.getElementById('fontSizeVal').textContent = this.value + 'px';
+      settings.fontSize = parseInt(this.value);
+      applyTheme(settings, false); // 实时预览字号
+      // 防抖：停止拖动后自动重新分页
+      clearTimeout(sliderTimer);
+      sliderTimer = setTimeout(reflowAfterTheme, 120);
+    };
+  };
+
+  window.applySettings = function() {
+    document.getElementById('settingsModal').classList.remove('show');
+    applyTheme(settings); // 保存设置
+    reflowAfterTheme();
+  };
+
+  // 点击遮罩 = 取消，恢复原设置
+  document.getElementById('settingsModal').onclick = function(e) {
+    if (e.target === this) {
+      settings = savedSettings || settings;
+      applyTheme(settings);
+      this.classList.remove('show');
+      reflowAfterTheme();
+    }
+  };
+
+  // ─── 触摸点击反馈（移动端） ─────────
+  // :active 在移动浏览器上不可靠，且会被系统 tap 高亮覆盖，
+  // 这里用 touch 事件手动加 .tapping 类控制反馈色
+  document.querySelectorAll('.tap-zone').forEach(z => {
+    z.addEventListener('touchstart', () => z.classList.add('tapping'), { passive: true });
+    z.addEventListener('touchend', () => z.classList.remove('tapping'));
+    z.addEventListener('touchcancel', () => z.classList.remove('tapping'));
+    // 鼠标端也统一（保留 :active 同时加类，更可靠）
+    z.addEventListener('mousedown', () => z.classList.add('tapping'));
+    z.addEventListener('mouseup', () => z.classList.remove('tapping'));
+    z.addEventListener('mouseleave', () => z.classList.remove('tapping'));
+  });
+
+  // ─── 分页计算（实测，保证不溢出） ──────
+  function findMaxFit(text, el) {
+    // 二分查找：在当前视口内能完整显示的最长前缀
+    let lo = 1, hi = text.length, best = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      el.textContent = text.substring(0, mid);
+      if (el.scrollHeight <= el.clientHeight + 1) {
+        best = mid; lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return Math.max(1, best);
+  }
+
+  // 构建页面历史：从章节开头逐页测量，直到覆盖恢复位置
+  function buildPageHistory() {
+    const el = document.getElementById('readerText');
+    if (!el || !el.clientHeight) { pageHistory = [pageOffset]; return; }
+    const target = Math.min(pageOffset, Math.max(0, chapterText.length - 1));
+    const hist = [0];
+    if (target > 0) {
+      let pos = 0;
+      while (pos < target) {
+        const n = findMaxFit(chapterText.substring(pos), el);
+        if (n <= 0) break;
+        pos += n;
+        if (pos >= target) break; // 恢复位置落在本页内，不再记录下一页起点
+        hist.push(pos);
+      }
+    }
+    pageHistory = hist;
+    // 恢复位置所在页的起点（该页完整包含上次读到的地方）
+    pageOffset = hist[hist.length - 1];
+  }
+
+  // ─── 数据 ──────────────────────────
+  let books = [];
+  let chapters = [];
+  let book = null;
+  let chapterIndex = 0;
+  let chapterText = '';
+  let pageOffset = 0;
+  let snippetLen = 500;
+  let pageHistory = []; // 已访问页面的起始位置栈（栈顶 = 当前页起点）
+  let jumpToEnd = false; // 切上一章后定位到章节末尾
+
+  async function api(path, params) {
+    const url = new URL(path, location.origin);
+    if (params) Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
+    const headers = TOKEN ? { 'Authorization': 'Bearer ' + TOKEN } : {};
+    const resp = await fetch(url, { headers });
+    const raw = await resp.json();
+    const data = raw.detail || raw;
+    if (data.isSuccess === false) throw new Error(data.errorMsg || '请求失败');
+    return data.data !== undefined ? data.data : data;
+  }
+
+  // ─── 选书 ──────────────────────────
+  async function loadBooks() {
+    try {
+      books = await api('/getBookshelf');
+      books.sort((a, b) => (b.durChapterTime || 0) - (a.durChapterTime || 0));
+      const list = document.getElementById('bookList');
+      list.innerHTML = '';
+      books.forEach((b, i) => {
+        const li = document.createElement('li');
+        li.className = 'book-item';
+        const progress = b.durChapterTitle ? '上次阅读: ' + b.durChapterTitle : '未阅读';
+        const author = b.author && b.author !== '未知作者' ? ' · ' + b.author : '';
+        li.innerHTML = '<div class="book-name-lg">' + escHtml(b.name) + '</div>'
+          + '<div class="book-info">' + escHtml(progress) + author + ' · ' + b.totalChapterNum + ' 章</div>';
+        li.onclick = () => selectBook(i);
+        list.appendChild(li);
+      });
+      document.getElementById('bookLoading').style.display = 'none';
+      list.style.display = 'block';
+    } catch (e) {
+      document.getElementById('bookLoading').textContent = '加载失败: ' + e.message;
+    }
+  }
+
+  async function selectBook(index) {
+    book = books[index];
+    document.getElementById('headerTitle').textContent = book.name;
+    document.getElementById('bookView').style.display = 'none';
+    const rv = document.getElementById('readerView');
+    rv.style.display = 'flex';
+    document.getElementById('btnChapters').style.display = 'inline-flex';
+
+    try {
+      chapters = await api('/getChapterList', { url: book.bookUrl });
+      renderChapterList();
+      chapterIndex = book.durChapterIndex || 0;
+      pageOffset = book.durChapterPos || 0;
+      await loadChapter();
+    } catch (e) {
+      document.getElementById('readerText').textContent = '加载章节失败: ' + e.message;
+    }
+  }
+
+  // 返回书架列表（在阅读视图）；在书架页则返回索引页
+  window.backToBooks = function() {
+    const rv = document.getElementById('readerView');
+    // 已在书架列表页 → 跳转索引页
+    if (rv.style.display === 'none') {
+      window.location.href = '/api/v1/novels/pages';
+      return;
+    }
+    rv.style.display = 'none';
+    document.getElementById('bookView').style.display = 'block';
+    document.getElementById('headerTitle').textContent = '[文本阅读]';
+    document.getElementById('pageInfo').textContent = '';
+    document.getElementById('btnChapters').style.display = 'none';
+    hideChapters();
+    loadBooks(); // 刷新列表（保持最近阅读排序）
+  };
+
+  // ─── 章节列表弹窗（虚拟滚动） ─────
+  const CH_ITEM_H = 38; // 每章固定行高（与 CSS 一致）
+  const CH_BUFFER = 8;  // 上下缓冲行数
+  let chScrollTop = 0;
+
+  window.toggleChapterList = function() {
+    const modal = document.getElementById('chaptersModal');
+    modal.classList.toggle('show');
+    // 打开时滚动到当前章节
+    if (modal.classList.contains('show')) {
+      scrollChaptersToCurrent();
+    }
+  };
+
+  window.hideChapters = function() {
+    document.getElementById('chaptersModal').classList.remove('show');
+  };
+
+  // 点击遮罩关闭章节弹窗
+  document.getElementById('chaptersModal').onclick = function(e) {
+    if (e.target === this) hideChapters();
+  };
+
+  // 滚动到当前章节
+  function scrollChaptersToCurrent() {
+    const list = document.getElementById('chapterList');
+    list.scrollTop = chapterIndex * CH_ITEM_H;
+  }
+
+  // 虚拟滚动渲染：只渲染可视区 ± 缓冲
+  function renderChapterList() {
+    const list = document.getElementById('chapterList');
+    if (!chapters.length) {
+      list.innerHTML = '<div class="chapter-item" style="position:static">暂无章节</div>';
+      return;
+    }
+    // 容器总高度（占位撑出滚动条）
+    const totalH = chapters.length * CH_ITEM_H;
+    // 重建：外层占位 + 内部可见区
+    list.innerHTML = '';
+    const spacer = document.createElement('div');
+    spacer.style.height = totalH + 'px';
+    spacer.style.position = 'relative';
+    list.appendChild(spacer);
+
+    const render = () => {
+      const scrollTop = list.scrollTop;
+      const vh = list.clientHeight;
+      const startIdx = Math.max(0, Math.floor(scrollTop / CH_ITEM_H) - CH_BUFFER);
+      const endIdx = Math.min(chapters.length, Math.ceil((scrollTop + vh) / CH_ITEM_H) + CH_BUFFER);
+      // 清理旧节点（保留 spacer）
+      spacer.querySelectorAll('.chapter-item').forEach(n => n.remove());
+      for (let i = startIdx; i < endIdx; i++) {
+        const ch = chapters[i];
+        const div = document.createElement('div');
+        div.className = 'chapter-item' + (i === chapterIndex ? ' active' : '');
+        div.style.top = (i * CH_ITEM_H) + 'px';
+        div.innerHTML = '<span class="ch-num">' + (i + 1) + '</span><span class="ch-title">' + escHtml(ch.title) + '</span>';
+        div.onclick = () => {
+          chapterIndex = i; pageOffset = 0; hideChapters(); loadChapter();
+        };
+        spacer.appendChild(div);
+      }
+    };
+
+    list.onscroll = render; // 滚动时增量渲染
+    render();
+  }
+
+  // 按章节号跳转
+  window.jumpToChapter = function() {
+    const input = document.getElementById('chapterJumpInput');
+    const n = parseInt(input.value, 10);
+    if (!n || n < 1 || n > chapters.length) {
+      input.value = '';
+      input.placeholder = '请输入 1-' + chapters.length + ' 的章节号';
+      return;
+    }
+    chapterIndex = n - 1; pageOffset = 0; hideChapters(); loadChapter();
+  };
+
+  async function loadChapter() {
+    if (chapterIndex < 0 || chapterIndex >= chapters.length) return;
+    document.getElementById('readerTitle').textContent = chapters[chapterIndex].title;
+    document.getElementById('readerLoading').style.display = 'flex';
+    document.getElementById('readerText').style.display = 'none';
+
+    try {
+      chapterText = await api('/getBookContent', { url: book.bookUrl, index: chapterIndex });
+      chapterText = htmlToText(chapterText);
+      // 上一章切换：定位到本章最后一页
+      if (jumpToEnd) {
+        jumpToEnd = false;
+        pageOffset = Math.max(0, chapterText.length - 1);
+      }
+      // 等待 DOM 布局完成后再分页
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          document.getElementById('readerLoading').style.display = 'none';
+          document.getElementById('readerText').style.display = 'block';
+          buildPageHistory(); // 恢复进度：构建从章节开头到当前位置的完整页面历史
+          reflowPage(); renderChapterList(); saveProgress();
+        });
+      });
+    } catch (e) {
+      document.getElementById('readerLoading').style.display = 'none';
+      document.getElementById('readerText').style.display = 'block';
+      document.getElementById('readerText').textContent = '加载失败: ' + e.message;
+    }
+  }
+
+  function reflowPage() {
+    if (pageOffset >= chapterText.length) pageOffset = Math.max(0, chapterText.length - 1);
+    const el = document.getElementById('readerText');
+    if (!el || !el.clientHeight) { snippetLen = 500; return; }
+    const remaining = chapterText.substring(pageOffset);
+    snippetLen = findMaxFit(remaining, el);
+    const end = Math.min(pageOffset + snippetLen, chapterText.length);
+    el.textContent = remaining.substring(0, snippetLen) || '（本章暂无内容）';
+    document.getElementById('pageInfo').textContent = (pageOffset + 1) + '-' + end + ' / ' + chapterText.length + '字';
+    document.getElementById('btnPrevPage').disabled = (pageOffset <= 0 && chapterIndex <= 0);
+    document.getElementById('btnNextPage').disabled = (end >= chapterText.length && chapterIndex >= chapters.length - 1);
+  }
+
+  window.prevPage = function() {
+    // 章首继续点 → 切上一章（翻到上一章末尾）
+    if (pageOffset <= 0 && pageHistory.length <= 1) {
+      prevChapter(); return;
+    }
+    // 弹出当前页起点，回到上一页起点（栈顶）
+    if (pageHistory.length > 1) pageHistory.pop();
+    pageOffset = pageHistory[pageHistory.length - 1];
+    reflowPage();
+    saveProgress();
+  };
+
+  window.nextPage = function() {
+    if (pageOffset + snippetLen >= chapterText.length) { nextChapter(); return; }
+    pageOffset += snippetLen;
+    pageHistory.push(pageOffset); // 记录新页起点
+    reflowPage();
+    saveProgress();
+  };
+
+  window.prevChapter = function() {
+    if (chapterIndex <= 0) return;
+    jumpToEnd = true; // 切到上一章最后一页
+    chapterIndex--; pageOffset = 0; loadChapter();
+  };
+
+  window.nextChapter = function() {
+    if (chapterIndex >= chapters.length - 1) return;
+    chapterIndex++; pageOffset = 0; loadChapter();
+  };
+
+  async function saveProgress() {
+    if (!book) return;
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (TOKEN) headers['Authorization'] = 'Bearer ' + TOKEN;
+      await fetch('/saveBookProgress', {
+        method: 'POST', headers: headers,
+        body: JSON.stringify({
+          name: book.name, author: book.author,
+          durChapterIndex: chapterIndex, durChapterPos: pageOffset,
+          durChapterTime: Date.now(),
+          durChapterTitle: (chapters[chapterIndex] || {}).title || ''
+        })
+      });
+    } catch (e) {}
+  }
+
+  function escHtml(s) {
+    const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
+  }
+
+  function htmlToText(html) {
+    const d = document.createElement('div'); d.innerHTML = html;
+    return d.textContent || d.innerText || '';
+  }
+
+  // ─── 窗口调整 ──────────────────────
+  let resizeTimer;
+  window.onresize = function() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (chapterText) reflowPage(); }, 150);
+  };
+
+  loadBooks();
+})();
+</script>
+{% endraw %}
+</body>
+</html>

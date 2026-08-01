@@ -3,28 +3,47 @@
 import json
 import os
 import secrets
+from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
 
 from app.config import settings
+from app.security import token_for_url, request_token_ok
 from app.sources import get_source, list_sources
 
 router = APIRouter(prefix="/api/v1", tags=["search"])
 
+# Jinja2 模板
+templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
-def _require_token(token: str | None):
-    """若配置了 API_TOKEN，校验 token，无效抛 403。"""
-    if settings.api_token:
-        if not token or not secrets.compare_digest(token, settings.api_token):
-            raise HTTPException(status_code=403, detail="无效的访问口令")
+
+def _redirect_login() -> RedirectResponse:
+    """未认证的页面请求：跳转到 /login。"""
+    return RedirectResponse(url="/login", status_code=302)
+
+
+def _require_token(request: Request = None):
+    """若配置了 API_TOKEN，校验 token（Bearer/Cookie），无效抛 403。"""
+    if settings.api_token and (request is None or not request_token_ok(request)):
+        raise HTTPException(status_code=403, detail="无效的访问口令")
+
+
+def _token_ok(request: Request = None) -> bool:
+    """布尔版 token 校验。"""
+    if not settings.api_token:
+        return True
+    return request is not None and request_token_ok(request)
 
 
 @router.get("/sources")
-async def sources_list(token: str | None = Query(None)):
+async def sources_list(
+    request: Request = None,
+):
     """列出可用搜索源。"""
-    _require_token(token)
+    _require_token(request)
     return list_sources()
 
 
@@ -32,10 +51,10 @@ async def sources_list(token: str | None = Query(None)):
 async def search_books(
     q: str = Query(..., min_length=1, description="搜索关键词"),
     source: str = Query("a", description="搜索源名称（a/b/auto）"),
-    token: str | None = Query(None),
+    request: Request = None,
 ):
     """搜索书籍。"""
-    _require_token(token)
+    _require_token(request)
     if source == "auto":
         results = []
         for name in ["a", "b"]:
@@ -59,10 +78,10 @@ async def search_books(
 async def book_detail(
     book_id: str = Query(..., description="书籍 ID"),
     source: str = Query("a", description="搜索源名称"),
-    token: str | None = Query(None),
+    request: Request = None,
 ):
     """获取书籍详情和下载链接。"""
-    _require_token(token)
+    _require_token(request)
     s = get_source(source)
     if not s:
         raise HTTPException(status_code=400, detail=f"未知搜索源: {source}")
@@ -74,156 +93,20 @@ async def book_detail(
 
 @router.get("/search-page", response_class=HTMLResponse, include_in_schema=False)
 async def search_page(
-    token: str | None = Query(None),
+    request: Request = None,
 ):
-    """浏览器搜索页面。"""
-    # 页面本身 token 验证
-    if settings.api_token:
-        if not token or not secrets.compare_digest(token, settings.api_token):
-            return HTMLResponse(
-                content=f"""<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>书籍搜索</title>
-<style>
-  * {{ box-sizing: border-box; }}
-  body {{ font-family: sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; background: #fafafa; }}
-  .box {{ text-align: center; }}
-  h2 {{ font-size: 18px; margin-bottom: 12px; }}
-  p {{ color: #666; font-size: 14px; margin-bottom: 20px; }}
-  input, button {{ padding: 10px 14px; font-size: 14px; border-radius: 6px; border: 1px solid #ccc; }}
-  input {{ width: 220px; }}
-  button {{ background: #007acc; color: #fff; border: none; cursor: pointer; margin-left: 8px; }}
-  button:hover {{ background: #005999; }}
-</style>
-</head>
-<body>
-<div class="box">
-  <h2>🔒 需要访问口令</h2>
-  <p>书籍搜索页面已启用口令验证，请输入有效 token</p>
-  <form method="get" action="/api/v1/search-page">
-    <input type="text" name="token" placeholder="请输入访问口令">
-    <button type="submit">进入</button>
-  </form>
-</div>
-</body>
-</html>""",
-                status_code=403,
-            )
+    """浏览器搜索页面。需要 token 验证（Bearer 或 Cookie）。"""
+    if not _token_ok(request):
+        return _redirect_login()
 
-    t = quote(token, safe="") if token else ""
-
-    sources_html = ""
-    for src in list_sources():
-        sources_html += f'<option value="{src["name"]}">{src["title"]}</option>\n'
-
-    html = f"""<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>书籍搜索</title>
-<style>
-  * {{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }}
-  body {{ font-family: sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; }}
-  .search-box {{ display: flex; gap: 8px; margin-bottom: 16px; }}
-  .search-box input[type=text] {{ flex: 1; padding: 10px; font-size: 16px; border: 1px solid #ddd; border-radius: 4px; }}
-  .search-box select {{ padding: 10px; border: 1px solid #ddd; border-radius: 4px; }}
-  .search-box button {{ padding: 10px 24px; background: #007acc; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }}
-  .search-box button:hover {{ background: #005999; }}
-  .result {{ border: 1px solid #eee; padding: 14px; margin-bottom: 8px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }}
-  .result-title {{ font-size: 15px; font-weight: bold; }}
-  .result-size {{ font-size: 13px; color: #888; }}
-  .result .btn {{ padding: 6px 16px; background: #28a745; color: #fff; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; font-size: 13px; }}
-  .result .btn:hover {{ background: #1e7e34; }}
-  .msg {{ padding: 12px; border-radius: 4px; margin: 12px 0; }}
-  .msg.info {{ background: #d1ecf1; color: #0c5460; }}
-  .msg.error {{ background: #f8d7da; color: #721c24; }}
-  .msg.success {{ background: #d4edda; color: #155724; }}
-  #status {{ margin-top: 12px; }}
-  @media (max-width: 720px) {{
-    body {{ margin: 16px auto; padding: 0 12px; }}
-    h2 {{ font-size: 18px; }}
-    .search-box {{ flex-wrap: wrap; }}
-    .search-box input[type=text] {{ min-width: 100%; }}
-    .search-box select {{ flex: 1; }}
-    .search-box button {{ flex: 1; padding: 10px; }}
-    .result {{ flex-wrap: wrap; gap: 8px; }}
-    .result .btn {{ padding: 8px 20px; }}
-  }}
-</style>
-</head>
-<body>
-<div style="margin-bottom:12px"><a href="/api/v1/novels/pages?token={t}" style="color:#007acc;text-decoration:none;font-size:14px;">← 返回索引</a></div>
-<h2>[书籍搜索]</h2>
-<div class="search-box">
-  <input type="text" id="keyword" placeholder="输入书名或作者关键词" onkeydown="if(event.key===\\'Enter\\') search()">
-  <select id="sourceSelect">{sources_html}</select>
-  <button onclick="search()">搜索</button>
-</div>
-<div id="status"></div>
-<div id="results"></div>
-
-<script>
-var TOKEN = "{t}";
-
-function search() {{
-  var kw = document.getElementById('keyword').value.trim();
-  if (!kw) return;
-  var src = document.getElementById('sourceSelect').value;
-  var status = document.getElementById('status');
-  var results = document.getElementById('results');
-  status.innerHTML = '<div class="msg info">🔍 搜索中...</div>';
-  results.innerHTML = '';
-
-  var url = '/api/v1/search?q=' + encodeURIComponent(kw) + '&source=' + src + (TOKEN ? '&token=' + encodeURIComponent(TOKEN) : '');
-  fetch(url).then(function(r) {{ return r.json(); }}).then(function(d) {{
-    if (d.total === 0) {{
-      status.innerHTML = '<div class="msg error">❌ 未找到匹配结果</div>';
-      return;
-    }}
-    status.innerHTML = '<div class="msg success">✅ 共找到 ' + d.total + ' 个结果</div>';
-    var html = '';
-    d.results.forEach(function(item) {{
-      var size = item.size_hint ? ' (' + item.size_hint + ')' : '';
-      var srcName = item.source_title || item.source;
-      var author = item.author || '';
-      var authorHtml = author ? ' · ' + author : '';
-      html += '<div class="result">' +
-        '<div><div class="result-title">' + item.title + '</div>' +
-        '<div class="result-size">' + srcName + authorHtml + size + '</div></div>' +
-        '<button class="btn" onclick="downloadBook(\\'' + item.id + '\\',\\'' + item.source + '\\',this)">下载</button>' +
-        '</div>';
-    }});
-    results.innerHTML = html;
-  }}).catch(function(err) {{
-    status.innerHTML = '<div class="msg error">❌ 请求失败: ' + err.message + '</div>';
-  }});
-}}
-
-function downloadBook(bookId, source, btn) {{
-  btn.disabled = true;
-  btn.textContent = '下载中...';
-  var url = '/api/v1/books/download?book_id=' + encodeURIComponent(bookId) + '&source=' + encodeURIComponent(source) + (TOKEN ? '&token=' + encodeURIComponent(TOKEN) : '');
-  fetch(url).then(function(r) {{ return r.json(); }}).then(function(d) {{
-    if (d.success) {{
-      btn.textContent = '✅ 成功';
-      btn.style.background = '#6c757d';
-    }} else {{
-      btn.textContent = '❌ ' + (d.error || '失败');
-      btn.disabled = false;
-    }}
-  }}).catch(function() {{
-    btn.textContent = '❌ 网络错误';
-    btn.disabled = false;
-  }});
-}}
-</script>
-</body>
-</html>"""
-    return HTMLResponse(content=html)
+    return templates.TemplateResponse(
+        request=request,
+        name="search.html",
+        context={
+            "token": quote(token_for_url(request) or "", safe=""),
+            "sources": list_sources(),
+        },
+    )
 
 
 # ─── 下载书籍（通过搜索源） ────────────────────────
@@ -232,13 +115,12 @@ function downloadBook(bookId, source, btn) {{
 async def download_book(
     book_id: str = Query(..., description="书籍 ID"),
     source: str = Query("a", description="搜索源名称"),
-    token: str | None = Query(None, description="访问口令"),
+    request: Request = None,
 ):
     """通过搜索源下载书籍到 novels 目录。"""
     # Token 验证
-    if settings.api_token:
-        if not token or not secrets.compare_digest(token, settings.api_token):
-            return {"success": False, "error": "无效的访问口令"}
+    if not _token_ok(request):
+        return {"success": False, "error": "无效的访问口令"}
 
     s = get_source(source)
     if not s:
