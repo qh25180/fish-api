@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     upload_chunk_size_kb: int = 512
     file_download_enabled: bool = False
     file_rename_pinyin: bool = False
+    # 重命名模式（0=不重命名，1=小说名拼音，2=中文小说名，3=中文小说名-中文作者）。
+    # 若未设置该变量（默认0）但 FILE_RENAME_PINYIN=true，则按模式1（拼音）处理，保持向后兼容。
+    file_rename_mode: int = 0
     # 是否启用文本阅读页面（/read）及其操作的 token 验证。
     # 启用时（且配置了 API_TOKEN），访问 /read 及阅读器调用的
     # getBookshelf/getChapterList/getBookContent/saveBookProgress 等接口需携带 token。

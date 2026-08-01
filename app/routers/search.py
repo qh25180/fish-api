@@ -283,10 +283,10 @@ async def download_book(
             filename = os.path.basename(download_url)
             filepath = dl_dir / filename
 
-            # 重命名（如需）
-            from app.utils.pinyin_util import filename_to_pinyin
-            pinyin_name = filename_to_pinyin(filename)
-            filepath = dl_dir / pinyin_name
+            # 重命名（如需，按 FILE_RENAME_MODE 配置）
+            from app.utils.pinyin_util import build_rename_name
+            rename_name = build_rename_name(filename)
+            filepath = dl_dir / rename_name
 
             with open(filepath, "wb") as f:
                 f.write(data)
@@ -295,7 +295,7 @@ async def download_book(
             _save_author_to_progress(filepath.name, detected_author)
 
             return {"success": True, "filename": filepath.name,
-                    "size": len(data), "renamed": pinyin_name != filename}
+                    "size": len(data), "renamed": rename_name != filename}
 
     except Exception as e:
         return {"success": False, "error": str(e)}

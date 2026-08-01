@@ -739,6 +739,15 @@ async def files_page(
 
     back_html = _back_to_index_html(token)
 
+    # 顶部工具栏：返回索引 + 一键重命名（样式参考阅读页顶部栏）
+    t = quote(token or "", safe="")
+    toolbar_html = f"""<div class="toolbar">
+<a href="/api/v1/novels/pages?token={t}" class="toolbar-back">← 返回索引</a>
+<form method="post" action="/api/v1/novels/batch-rename?token={t}" class="toolbar-form" onsubmit="return confirm('按当前配置（FILE_RENAME_MODE）一键重命名所有未隐藏小说？');">
+<button type="submit" class="toolbar-btn">🔄 一键重命名</button>
+</form>
+</div>"""
+
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -751,6 +760,13 @@ async def files_page(
   .msg {{ padding: 12px; border-radius: 4px; margin-bottom: 16px; }}
   .msg.success {{ background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }}
   .msg.error {{ background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }}
+  /* 顶部工具栏：返回索引 + 一键重命名（参考阅读页顶部栏） */
+  .toolbar {{ display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; padding: 10px 14px; background: #f0f4f8; border: 1px solid #dde6ee; border-radius: 8px; }}
+  .toolbar-back {{ color: #007acc; text-decoration: none; font-size: 14px; font-weight: bold; }}
+  .toolbar-back:hover {{ text-decoration: underline; }}
+  .toolbar-form {{ margin: 0; }}
+  .toolbar-btn {{ padding: 8px 16px; background: #007acc; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }}
+  .toolbar-btn:hover {{ background: #005999; }}
   table {{ width: 100%; border-collapse: collapse; margin-top: 16px; }}
   th, td {{ padding: 10px 12px; text-align: left; border-bottom: 1px solid #ddd; }}
   th {{ background: #f5f5f5; font-weight: bold; }}
@@ -785,7 +801,7 @@ async def files_page(
 </style>
 </head>
 <body>
-{back_html}
+{toolbar_html}
 <h2>[文件管理]</h2>
 {msg_html}
 <div class="table-wrap">
@@ -959,7 +975,7 @@ async def rename_book(
     except ValueError as e:
         err_msg = str(e)
         if is_browser:
-            return RedirectResponse(url=f"/usr/local/dev/qhapi/api/v1/novels/files?token={quote(token or '', safe='')}&error={quote(err_msg)}", status_code=303)
+            return RedirectResponse(url=f"/api/v1/novels/files?token={quote(token or '', safe='')}&error={quote(err_msg)}", status_code=303)
         raise HTTPException(status_code=400, detail=err_msg)
 
     if not old_path.exists():
@@ -1035,6 +1051,102 @@ async def rename_book(
         )
 
     return {"success": True, "old_filename": filename, "new_filename": safe_new_name}
+
+
+# ─── 一键批量重命名（按 FILE_RENAME_MODE 配置） ──────
+
+@router.post("/batch-rename")
+async def batch_rename_files(
+    token: str | None = Query(None),
+    request: Request = None,
+):
+    """按当前重命名模式一键重命名所有未隐藏的小说文件。"""
+    accept = request.headers.get("accept", "") if request else ""
+    is_browser = "text/html" in accept
+
+    if settings.api_token:
+        if not token or not secrets.compare_digest(token, settings.api_token):
+            err_msg = "无效的访问口令"
+            if is_browser:
+                return RedirectResponse(url=f"/api/v1/novels/files?token={quote(token or '', safe='')}&error={quote(err_msg)}", status_code=303)
+            raise HTTPException(status_code=403, detail=err_msg)
+
+    from app.utils.pinyin_util import build_rename_name
+    from app.services.file_service import _read_and_parse_cached
+    import json
+
+    novels_dir = settings.text_files_dir
+    hidden = _load_hidden_books()
+
+    # 读取进度文件（用于同步 key）
+    progress_path = novels_dir / ".legado_progress.json"
+    progress = {}
+    if progress_path.exists():
+        try:
+            progress = json.loads(progress_path.read_text(encoding="utf-8"))
+            progress = progress if isinstance(progress, dict) else {}
+        except Exception:
+            progress = {}
+
+    renamed: list[str] = []
+    errors: list[str] = []
+    skipped = 0
+
+    for f in sorted(novels_dir.iterdir()):
+        if not f.is_file():
+            continue
+        if f.suffix.lower() not in settings.text_file_extensions_list:
+            continue
+        if f.stem in hidden:
+            continue  # 跳过隐藏书籍
+
+        new_name = build_rename_name(f.name)
+        if new_name == f.name:
+            skipped += 1
+            continue
+
+        # 冲突处理：目标已存在则加 (1)、(2)…
+        target = f.parent / new_name
+        counter = 1
+        while target.exists() and target != f:
+            target = f.parent / f"{Path(new_name).stem} ({counter}){Path(new_name).suffix}"
+            counter += 1
+
+        try:
+            f.rename(target)
+        except Exception as e:
+            errors.append(f"{f.name}: {e}")
+            continue
+
+        # 同步进度文件 key
+        if f.stem in progress:
+            progress[target.stem] = progress.pop(f.stem)
+        renamed.append(f"{f.name} → {target.name}")
+
+    # 写回进度文件（有重命名或文件存在时）
+    if renamed or progress_path.exists():
+        try:
+            novels_dir.mkdir(parents=True, exist_ok=True)
+            tmp = progress_path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(progress, ensure_ascii=False, indent=2), encoding="utf-8")
+            tmp.replace(progress_path)
+        except Exception:
+            pass
+
+    # 清除章节缓存
+    _read_and_parse_cached.cache_clear()
+
+    msg = f"重命名完成：{len(renamed)} 个文件，跳过 {skipped} 个"
+    if errors:
+        msg += f"，失败 {len(errors)} 个（{'；'.join(errors[:3])}）"
+
+    if is_browser:
+        return RedirectResponse(
+            url=f"/api/v1/novels/files?token={quote(token or '', safe='')}&success={quote(msg)}",
+            status_code=303,
+        )
+
+    return {"success": True, "renamed": renamed, "skipped": skipped, "errors": errors}
 
 
 # ─── 修改作者 ───────────────────────────────────────
