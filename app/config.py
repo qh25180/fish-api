@@ -22,10 +22,11 @@ class Settings(BaseSettings):
     # 重命名模式（0=不重命名，1=小说名拼音，2=中文小说名，3=中文小说名-中文作者）。
     # 若未设置该变量（默认0）但 FILE_RENAME_PINYIN=true，则按模式1（拼音）处理，保持向后兼容。
     file_rename_mode: int = 0
-    # 是否启用文本阅读页面（/read）及其操作的 token 验证。
-    # 启用时（且配置了 API_TOKEN），访问 /read 及阅读器调用的
-    # getBookshelf/getChapterList/getBookContent/saveBookProgress 等接口需携带 token。
-    reader_token_enabled: bool = False
+    # Legado HTTP API 整体开关（默认开启，保持外部工具兼容）。
+    # 注意：Legado 接口为外部协议，永不验证 token；关闭后相关接口返回 403 未开放。
+    legado_enabled: bool = True
+    # Swagger 文档开关（默认关闭；开启后 /docs、/openapi.json 需认证访问）。
+    docs_enabled: bool = False
     source_a_enabled: bool = False
     source_a_url: str = ""
     source_a_name: str = "示例源A"

@@ -1,13 +1,17 @@
 ﻿"""QHAPI — API 入口"""
 
+import html as html_mod
 import secrets
 import string
+from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Form, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
+from app.security import request_token_ok, verify_token
 from app.routers import novels, legado, search
 from app.sources import source_a, source_b  # 注册 source 插件
 
@@ -50,33 +54,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── 保护 Swagger 文档 ────────────────────────
-if settings.api_token:
+# ─── Swagger 文档（默认关闭，DOCS_ENABLED=true 开启） ──
+def _doc_token_ok(request) -> bool:
+    """文档页 token 校验：支持 Authorization Bearer 与 Cookie。"""
+    if not settings.api_token:
+        return True
+    return request_token_ok(request)
+
+
+if settings.docs_enabled:
     from fastapi.openapi.docs import get_swagger_ui_html
 
     @app.get("/docs", include_in_schema=False)
-    async def custom_docs(token: str | None = None):
-        if not token or not secrets.compare_digest(token, settings.api_token):
+    async def custom_docs(request: Request = None):
+        if not _doc_token_ok(request):
             return JSONResponse(status_code=404, content={"detail": "Not found"})
         return get_swagger_ui_html(
-            openapi_url=f"/openapi.json?token={token}",
+            openapi_url="/openapi.json",
             title="QHAPI",
         )
 
     @app.get("/openapi.json", include_in_schema=False)
-    async def custom_openapi(token: str | None = None):
-        if not token or not secrets.compare_digest(token, settings.api_token):
+    async def custom_openapi(request: Request = None):
+        if not _doc_token_ok(request):
             return JSONResponse(status_code=404, content={"detail": "Not found"})
-        return app.openapi()
-else:
-    from fastapi.openapi.docs import get_swagger_ui_html
-
-    @app.get("/docs", include_in_schema=False)
-    async def public_docs():
-        return get_swagger_ui_html(openapi_url="/openapi.json", title="QHAPI")
-
-    @app.get("/openapi.json", include_in_schema=False)
-    async def public_openapi():
         return app.openapi()
 
 # 注册路由
@@ -84,31 +85,95 @@ app.include_router(novels.router)
 app.include_router(legado.router)
 app.include_router(search.router)
 
-
-# ─── 短链接入口（方便手机/浏览器输入） ─────────────
-from app.routers.novels import _pages_index_html
-
-@app.get("/p", include_in_schema=False, response_class=HTMLResponse)
-async def short_pages_index(token: str | None = None):
-    """短链接索引页：/p?token=xxx 或 /p/xxx"""
-    return HTMLResponse(content=_pages_index_html(token))
+# ─── 静态资源（前端 CSS/JS，页面模板引用） ─────────
+# main.py 位于项目根，static 位于 app/static/
+_static_dir = Path(__file__).parent / "app" / "static"
+if _static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
 
-@app.get("/p/{token}", include_in_schema=False, response_class=HTMLResponse)
-async def short_pages_index_path(token: str):
-    """短链接索引页（token 放路径）：/p/xxx"""
-    return HTMLResponse(content=_pages_index_html(token))
+# ─── 认证与页面入口 ────────────────────────────────
+_LOGIN_STYLE = """
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { font-family: sans-serif; max-width: 400px; margin: 80px auto; padding: 0 20px; }
+  h2 { font-size: 20px; text-align: center; }
+  .box { border: 1px solid #ddd; padding: 24px; border-radius: 8px; background: #fafafa; }
+  label { display: block; margin-bottom: 8px; font-weight: bold; }
+  input[type=password] { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
+  button { width: 100%; margin-top: 16px; padding: 10px; background: #007acc; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+  button:hover { background: #005999; }
+  .msg { padding: 12px; border-radius: 4px; margin-bottom: 16px; text-align: center; }
+  .msg.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+  .tip { color: #666; font-size: 13px; margin-top: 12px; text-align: center; }
+</style>
+"""
 
 
-@app.get("/", tags=["root"])
-async def root():
-    """API 根路径，返回服务信息。"""
-    docs_hint = "/docs?token=您的API_TOKEN" if settings.api_token else "/docs"
-    return {
-        "service": "QHAPI Service",
-        "version": "1.0.0",
-        "docs": docs_hint,
-    }
+def _login_page_html(error: str = "") -> str:
+    """登录页：输入 token，POST 到 /login 写入 Cookie。"""
+    msg = f'<div class="msg error">❌ {html_mod.escape(error)}</div>' if error else ""
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>登录 - QHAPI</title>
+{_LOGIN_STYLE}
+</head>
+<body>
+<h2>🔐 登录</h2>
+{msg}
+<div class="box">
+  <form method="post" action="/login">
+    <label for="token">访问口令</label>
+    <input type="password" name="token" id="token" placeholder="请输入访问口令" autofocus required>
+    <button type="submit">进入</button>
+  </form>
+  <div class="tip">登录后即可访问全部功能</div>
+</div>
+</body>
+</html>"""
+
+
+@app.get("/login", include_in_schema=False, response_class=HTMLResponse)
+async def login_page(request: Request = None):
+    """登录页：已认证则跳转索引页 /api/v1/novels/pages，否则显示登录表单。"""
+    if request_token_ok(request):
+        return RedirectResponse(url="/api/v1/novels/pages", status_code=302)
+    return HTMLResponse(content=_login_page_html())
+
+
+@app.post("/login", include_in_schema=False, response_class=HTMLResponse)
+async def login_submit(
+    token: str = Form(""),
+    next: str = Form("/api/v1/novels/pages"),
+):
+    """登录提交：验证 token，写入 Cookie，跳转到 next（默认索引页）。"""
+    if not verify_token(token):
+        return HTMLResponse(content=_login_page_html("口令不正确，请重试"), status_code=401)
+    # 安全校验 next：仅允许站内相对路径
+    if not next.startswith("/") or next.startswith("//"):
+        next = "/api/v1/novels/pages"
+    resp = RedirectResponse(url=next, status_code=302)
+    resp.set_cookie("qhapi_token", token, httponly=False, samesite="lax")
+    return resp
+
+
+@app.get("/logout", include_in_schema=False)
+async def logout():
+    """退出登录：清除认证 Cookie，跳转到登录页。"""
+    resp = RedirectResponse(url="/login", status_code=302)
+    resp.delete_cookie("qhapi_token", path="/")
+    return resp
+
+
+@app.get("/", include_in_schema=False)
+async def root(request: Request = None):
+    """API 根路径：未认证跳转 /login，已认证跳转索引页。"""
+    if not request_token_ok(request):
+        return RedirectResponse(url="/login", status_code=302)
+    return RedirectResponse(url="/api/v1/novels/pages", status_code=302)
 
 
 @app.get("/health", tags=["root"])

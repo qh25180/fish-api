@@ -2,6 +2,9 @@
 
 提供 Dicarbene/yuedu_vscode_dicarbene 插件所需的端点。
 所有响应均包装在 LegadoApiResponse 统一格式中。
+
+安全说明：Legado 为外部协议（Legado App / VS Code 插件 / 脚本），
+**永不验证 token**，只受 settings.legado_enabled 开关控制（默认开启）。
 """
 
 import secrets
@@ -22,14 +25,13 @@ from app.services import legado_service
 router = APIRouter(tags=["legado"])
 
 
-def _require_reader_token(token: str | None):
-    """若启用了阅读器 token 验证，校验 token，无效则抛 403。"""
-    if settings.reader_token_enabled and settings.api_token:
-        if not token or not secrets.compare_digest(token, settings.api_token):
-            detail = LegadoApiResponse(
-                isSuccess=False, errorMsg="无效的访问口令", data=None
-            ).model_dump()
-            raise HTTPException(status_code=403, detail=detail)
+def _require_legado_enabled():
+    """若 Legado 开关关闭，返回 LegadoApiResponse 格式的 403。"""
+    if not settings.legado_enabled:
+        detail = LegadoApiResponse(
+            isSuccess=False, errorMsg="Legado API 未开放", data=None
+        ).model_dump()
+        raise HTTPException(status_code=403, detail=detail)
 
 
 def ok(data):
@@ -55,7 +57,7 @@ async def get_bookshelf(
 
     可选分页：page + page_size（page_size=0 时全量返回，兼容插件调用）。
     """
-    _require_reader_token(token)
+    _require_legado_enabled()
     try:
         books = legado_service.get_bookshelf(page=page, page_size=page_size)
         return ok(books)
@@ -69,7 +71,7 @@ async def get_chapter_list(
     token: str | None = Query(None),
 ):
     """获取指定文件的章节目录。"""
-    _require_reader_token(token)
+    _require_legado_enabled()
     try:
         chapters = legado_service.get_chapter_list(url)
         return ok(chapters)
@@ -86,7 +88,7 @@ async def get_book_content(
     token: str | None = Query(None),
 ):
     """获取指定章节的完整文本内容。"""
-    _require_reader_token(token)
+    _require_legado_enabled()
     try:
         content = legado_service.get_book_content(url, index)
         return ok(content)
@@ -104,7 +106,7 @@ async def save_book_progress_by_chapter(
     token: str | None = Query(None),
 ):
     """按章节标题或序号切换阅读进度（保存到该章节起始位置）。"""
-    _require_reader_token(token)
+    _require_legado_enabled()
     try:
         legado_service.save_progress_by_chapter(
             book_url=progress.bookUrl,
@@ -125,7 +127,7 @@ async def save_book_progress(
     token: str | None = Query(None),
 ):
     """保存阅读进度（持久化到 JSON 文件）。"""
-    _require_reader_token(token)
+    _require_legado_enabled()
     try:
         legado_service.save_book_progress(
             name=progress.name,
