@@ -35,6 +35,23 @@ class Settings(BaseSettings):
     source_b_path: str = "/"
     source_b_name: str = "示例源B"
 
+    # ── TTS 朗读配置 ────────────────────────────────────────────
+    # 阅读页朗读总开关（false 则前端隐藏朗读按钮）
+    tts_enabled: bool = True
+    # Edge-TTS 引擎开关（需要服务器能访问微软接口）
+    tts_edge_enabled: bool = True
+    # 局域网 Piper 引擎开关（需要自建 piper-tts 容器）
+    tts_local_enabled: bool = True
+    # 局域网 Piper 服务地址：fish-api 容器内经宿主机网关访问（宿主映射端口 5051）
+    # 若 fish-api 与 piper 在同一 docker 网络，可改为 http://piper-tts:5001
+    tts_local_url: str = "http://172.19.0.1:5051"
+    # Edge-TTS 默认语音（晓晓，女声，中文自然）
+    tts_edge_voice: str = "zh-CN-XiaoxiaoNeural"
+    # 单次合成最大文本长度（超限 400 拒绝）
+    tts_max_text_length: int = 8000
+    # 合成超时（秒）
+    tts_timeout_seconds: int = 120
+
     @property
     def text_file_extensions_list(self) -> List[str]:
         """Get allowed extensions as a list."""

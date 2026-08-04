@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.security import request_token_ok, verify_token
-from app.routers import novels, legado, search
+from app.routers import novels, legado, search, tts
 from app.sources import source_a, source_b  # 注册 source 插件
 
 app = FastAPI(
@@ -96,6 +96,7 @@ if settings.docs_enabled:
 app.include_router(novels.router)
 app.include_router(legado.router)
 app.include_router(search.router)
+app.include_router(tts.router)
 
 # ─── 静态资源（前端 CSS/JS，页面模板引用） ─────────
 # main.py 位于项目根，static 位于 app/static/

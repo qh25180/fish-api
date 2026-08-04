@@ -76,6 +76,15 @@ body { font-family: var(--font-family, "Noto Serif SC", serif); background: var(
 .color-presets { display: flex; gap: 8px; margin: 8px 0; }
 .color-presets button { width: 40px; height: 40px; border-radius: 8px; border: 2px solid transparent; cursor: pointer; }
 .color-presets button.active { border-color: #007acc; }
+/* 朗读设置 */
+.settings-sep { border: none; border-top: 1px solid color-mix(in srgb, var(--text-color, #333) 12%, transparent); margin: 16px 0 4px; }
+.range-val-inline { color: #007acc; font-weight: bold; }
+.tts-engine-sel { width: 100%; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--text-color, #333) 25%, transparent); border-radius: 6px; background: var(--card-bg, #fff); color: var(--text-color, #333); font-size: 14px; margin: 4px 0 4px; }
+.tts-engine-sel:focus { outline: none; border-color: #007acc; }
+/* 朗读高亮：当前朗读句子 */
+/* 朗读高亮：当前朗读句子（增强可见性） */
+.tts-sentence { transition: background-color 0.2s ease; white-space: pre-wrap; }
+.tts-sentence.active { background: rgba(0, 122, 204, 0.28); border-radius: 4px; color: #0a5f96; box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.15); }
 .modal .btn-confirm { display: block; width: 100%; margin-top: 16px; padding: 10px; background: #007acc; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 15px; }
 .modal .btn-confirm:hover { background: #005999; }
 
