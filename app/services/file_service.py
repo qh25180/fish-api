@@ -11,6 +11,7 @@ from typing import Optional
 from app.config import settings
 from app.utils.encoding import read_file_with_encoding, detect_encoding
 from app.utils.meta_util import extract_meta
+from app.services import meta_cache
 from app.models import NovelInfo, ChapterInfo
 
 # ─── Chapter Detection Patterns (ordered by priority) ─────────
@@ -228,7 +229,20 @@ def _parse_chapters(text: str) -> list[ChapterInfo]:
 
 
 def _estimate_chapters_and_author_from_head(file_path: Path) -> tuple[int, str]:
-    """仅读取文件前 64KB 估算章节数并提取作者，避免大文件全文读取。"""
+    """仅读取文件前 64KB 估算章节数并提取作者，避免大文件全文读取。
+
+    优先查指纹缓存：文件未变则直接复用 (est_chapters, author)，不读文件头。
+    """
+    # 指纹缓存命中（文件未变）→ 直接返回
+    try:
+        fp = meta_cache.fingerprint(file_path)
+        cached = meta_cache.get_meta(file_path.name, fp)
+        if cached:
+            return cached["est_chapters"], cached["author"]
+    except OSError:
+        pass
+
+    # 缓存未命中 → 读文件头解析并写缓存
     try:
         with open(file_path, "rb") as f:
             raw = f.read(65536)
@@ -236,7 +250,13 @@ def _estimate_chapters_and_author_from_head(file_path: Path) -> tuple[int, str]:
         text = raw.decode(detected, errors="replace")
         ch = _estimate_chapters(text)
         meta = extract_meta(file_path.name, text[:4096])
-        return ch, meta["author"]
+        result = (ch, meta["author"])
+        try:
+            fp = meta_cache.fingerprint(file_path)
+            meta_cache.set_meta(file_path.name, fp, ch, meta["author"])
+        except OSError:
+            pass
+        return result
     except Exception:
         return 1, "未知作者"
 
@@ -340,12 +360,37 @@ def list_novel_files(
 
 
 def get_chapters(filename: str) -> list[ChapterInfo]:
-    """Get chapter list for a given file."""
+    """Get chapter list for a given file（优先指纹缓存，避免读全文解析）。"""
     file_path = _safe_path(filename)
     if not file_path.exists():
         raise FileNotFoundError(f"文件不存在: {filename}")
 
+    # 章节缓存命中（文件未变）→ 直接返回
+    try:
+        fp = meta_cache.fingerprint(file_path)
+        cached = meta_cache.get_chapters(filename, fp)
+        if cached is not None:
+            return [ChapterInfo(**c) for c in cached]
+    except (OSError, TypeError):
+        pass
+
+    # 缓存未命中 → 读全文解析并写缓存
     _, chapters = _get_cached_text_and_chapters(file_path)
+    try:
+        fp = meta_cache.fingerprint(file_path)
+        meta_cache.set_chapters(
+            filename, fp, [c.model_dump() for c in chapters]
+        )
+        # 顺带补全元数据缓存中的 chapter_count / first_chapter_title
+        meta = meta_cache.get_meta(filename)
+        if meta and (not meta.get("chapter_count") or not meta.get("first_chapter_title")):
+            meta_cache.set_meta(
+                filename, fp, meta["est_chapters"], meta["author"],
+                chapter_count=len(chapters),
+                first_chapter_title=chapters[0].title if chapters else "",
+            )
+    except OSError:
+        pass
     return chapters
 
 

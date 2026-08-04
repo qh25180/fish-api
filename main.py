@@ -14,6 +14,10 @@ from app.config import settings
 from app.security import request_token_ok, verify_token
 from app.routers import novels, legado, search, tts
 from app.sources import source_a, source_b  # 注册 source 插件
+from app.services import meta_cache  # 文件指纹缓存
+
+# 启动时加载元数据/章节缓存（容器重启不丢，冷启动更快）
+meta_cache.load()
 
 app = FastAPI(
     title="QHAPI",

@@ -13,6 +13,7 @@ from app.services.file_service import (
     _safe_path,
     get_content,
 )
+from app.services import meta_cache
 from app.utils.encoding import read_file_with_encoding
 from app.legado_models import LegadoBook, LegadoChapter
 
@@ -67,46 +68,79 @@ def get_bookshelf(page: int = 1, page_size: int = 0) -> list[LegadoBook]:
     else:
         files, _ = list_novel_files(page=1, page_size=9999)
     hidden = _load_hidden_books()
-    return [_file_to_legado_book(f.filename, f.estimated_chapters)
+    # 进度文件循环外只读一次（避免每本书重复读盘+JSON解析）
+    progress = _load_progress()
+    return [_file_to_legado_book(f.filename, f.estimated_chapters, progress)
             for f in files if Path(f.filename).stem not in hidden]
 
 
-def _file_to_legado_book(filename: str, total_chapters: int) -> LegadoBook:
-    """将单个文件转为 LegadoBook，读取已保存的阅读进度。"""
+def _file_to_legado_book(filename: str, total_chapters: int, progress: dict | None = None) -> LegadoBook:
+    """将单个文件转为 LegadoBook，读取已保存的阅读进度。
+
+    progress 由 get_bookshelf 循环外传入（仅读一次）；作者/章节数/首标题优先查指纹缓存。
+    """
     name = Path(filename).stem
-
-    # 尝试读取第一章标题作为默认 durChapterTitle
-    try:
-        chapters = qhapi_get_chapters(filename)
-        first_chapter_title = chapters[0].title if chapters else ""
-    except Exception:
-        first_chapter_title = ""
-
-    # 读取已保存的进度
-    progress = _load_progress()
+    progress = progress if progress is not None else _load_progress()
     book_progress = progress.get(name, {})
 
-    # 尝试从文件名 + 文件内容提取作者
-    from app.utils.meta_util import extract_meta
-    from app.utils.encoding import detect_encoding
-    meta = extract_meta(filename)
-    if meta["author"] == "未知作者":
-        # 文件名提取失败 → 读文件头
-        try:
-            file_path = settings.text_files_dir / filename
-            if file_path.exists():
-                raw = file_path.read_bytes()[:4096]
-                enc = detect_encoding(str(file_path))
-                head = raw.decode(enc, errors="replace")
-                meta = extract_meta(filename, head)
-        except Exception:
-            pass
+    # 尝试读取第一章标题作为默认 durChapterTitle（优先指纹缓存，避免读全文）
+    first_chapter_title = ""
+    meta = None
+    try:
+        file_path = settings.text_files_dir / filename
+        fp = meta_cache.fingerprint(file_path)
+        meta = meta_cache.get_meta(filename, fp)
+        if meta:
+            first_chapter_title = meta.get("first_chapter_title", "") or ""
+            # 缓存有章节数但未传入（分页场景 total_chapters 为估算值）→ 用缓存的精确章节数
+            if meta.get("chapter_count"):
+                total_chapters = meta["chapter_count"]
+    except (OSError, TypeError):
+        pass
 
-    author = meta["author"]
+    if not first_chapter_title:
+        # 缓存没有首标题 → 读章节缓存或全文（会顺带写缓存）
+        try:
+            chapters = qhapi_get_chapters(filename)
+            first_chapter_title = chapters[0].title if chapters else ""
+            # 已解析出精确章节数 → 更新 total_chapters（冷缓存首次补齐）
+            if chapters:
+                total_chapters = len(chapters)
+        except Exception:
+            first_chapter_title = ""
+
+    # 尝试从文件名 + 文件内容提取作者（优先指纹缓存）
+    if meta and meta.get("author") and meta["author"] != "未知作者":
+        author = meta["author"]
+    else:
+        from app.utils.meta_util import extract_meta
+        from app.utils.encoding import detect_encoding
+        author = extract_meta(filename)["author"]
+        if author == "未知作者":
+            # 文件名提取失败 → 读文件头
+            try:
+                file_path = settings.text_files_dir / filename
+                if file_path.exists():
+                    raw = file_path.read_bytes()[:4096]
+                    enc = detect_encoding(str(file_path))
+                    head = raw.decode(enc, errors="replace")
+                    author = extract_meta(filename, head)["author"]
+            except Exception:
+                pass
+
     # 已保存的真实作者优先，未知作者则用提取到的
     saved_author = book_progress.get("author")
     if saved_author and saved_author != "未知作者":
-        author = saved_author
+        # 修复历史乱码：若作者是双重 UTF-8 编码（如 'å\x88\x98...'），尝试还原
+        # （latin-1 → utf-8 二次解码成功且含中文视为乱码）
+        fixed = _fix_double_encoded(saved_author)
+        if fixed is not None:
+            author = fixed
+            # 写回修复后的作者
+            progress[name] = {**book_progress, "author": fixed}
+            _save_progress(progress)
+        else:
+            author = saved_author
     elif author and author != "未知作者":
         # 提取到真实作者，存到进度文件中
         progress[name] = {**book_progress, "author": author}
@@ -185,6 +219,23 @@ def _normalize_text(text: str) -> str:
     # 统一标点
     text = text.replace("？", "?").replace("！", "!").replace("，", ",")
     return text
+
+
+def _fix_double_encoded(text: str) -> str | None:
+    """修复双重 UTF-8 编码的作者乱码。
+
+    历史数据中作者可能被错误地"先按 latin-1 解码再按 utf-8 编码"（如
+    'å\\x88\\x98æ\\x85\\x88æ¬£' 实为 '刘慈欣'）。能成功还原且含中文则返回修复值，
+    否则返回 None（表示不是乱码，原样使用）。
+    """
+    try:
+        repaired = text.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return None
+    # 还原结果应含中文字符（作者名基本是中文）
+    if re.search(r"[\u4e00-\u9fff]", repaired):
+        return repaired
+    return None
 
 
 def save_progress_by_chapter(book_url: str, chapter: str) -> None:

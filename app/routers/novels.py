@@ -603,6 +603,13 @@ async def delete_file(
             return RedirectResponse(url=f"/api/v1/novels/files?error={quote(err_msg)}", status_code=303)
         raise HTTPException(status_code=500, detail=err_msg)
 
+    # 失效元数据缓存（防止已删文件的缓存残留）
+    try:
+        from app.services import meta_cache
+        meta_cache.invalidate(filename)
+    except Exception:
+        pass
+
     if is_browser:
         return RedirectResponse(
             url=f"/api/v1/novels/files?success={quote(f'已删除: {filename}')}",
@@ -764,6 +771,13 @@ async def rename_book(
     # 清除章节缓存
     from app.services.file_service import _read_and_parse_cached
     _read_and_parse_cached.cache_clear()
+    # 失效指纹元数据缓存（旧名失效，新名下次访问时自动解析建缓存）
+    try:
+        from app.services import meta_cache
+        meta_cache.invalidate(filename)
+        meta_cache.invalidate(safe_new_name)
+    except Exception:
+        pass
 
     if is_browser:
         return RedirectResponse(
@@ -854,6 +868,12 @@ async def batch_rename_files(
 
     # 清除章节缓存
     _read_and_parse_cached.cache_clear()
+    # 批量重命名后全部指纹缓存失效（文件名全变，缓存 key 失效）
+    try:
+        from app.services import meta_cache
+        meta_cache.invalidate()
+    except Exception:
+        pass
 
     msg = f"重命名完成：{len(renamed)} 个文件，跳过 {skipped} 个"
     if errors:
