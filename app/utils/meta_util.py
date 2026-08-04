@@ -45,7 +45,8 @@ def extract_meta(filename: str, content_head: str = "") -> dict[str, str]:
         return {"title": m.group(1).strip(), "author": _clean_author(m.group(2).replace(".txt", "").replace(".rar", "").strip()) or "未知作者"}
 
     # ── 优先级 1.5: 《书名》（备注...）作者：xxx  —— 常见于精校版/校对版文件名 ──
-    m = re.match(r"\u300a([^\u300b]+)\u300b[^-\n]{0,60}?作者[：:]\s*(.+)", filename)
+    # 备注内容允许短横（如“实体版1-3全本”），但不能跨行或含作者冒号
+    m = re.match(r"\u300a([^\u300b]+)\u300b[^：:\n]{0,60}?作者[：:]\s*(.+)", filename)
     if m:
         author = _clean_author(m.group(2).replace(".txt", "").replace(".rar", "").strip())
         if author:

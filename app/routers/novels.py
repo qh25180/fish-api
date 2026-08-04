@@ -788,7 +788,11 @@ async def batch_rename_files(
         err_msg = "无效的访问口令"
         if is_browser:
             return RedirectResponse(url=f"/api/v1/novels/files?error={quote(err_msg)}", status_code=303)
+        raise HTTPException(status_code=403, detail=err_msg)
+
     import json
+    from app.utils.pinyin_util import build_rename_name
+    from app.services.file_service import _read_and_parse_cached
 
     novels_dir = settings.text_files_dir
     hidden = _load_hidden_books()
@@ -880,6 +884,11 @@ async def update_author(
         err_msg = "无效的访问口令"
         if is_browser:
             return RedirectResponse(url=f"/api/v1/novels/files?error={quote(err_msg)}", status_code=303)
+        raise HTTPException(status_code=403, detail=err_msg)
+
+    from pathlib import Path
+    stem = Path(filename).stem
+    progress_path = settings.text_files_dir / ".legado_progress.json"
     try:
         import json
         progress = json.loads(progress_path.read_text(encoding="utf-8")) if progress_path.exists() else {}
