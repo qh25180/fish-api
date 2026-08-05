@@ -136,15 +136,17 @@ def _file_to_legado_book(filename: str, total_chapters: int, progress: dict | No
         fixed = _fix_double_encoded(saved_author)
         if fixed is not None:
             author = fixed
-            # 写回修复后的作者
-            progress[name] = {**book_progress, "author": fixed}
-            _save_progress(progress)
+            # 仅当修复结果与现有值不同才写盘（避免每请求重复写进度文件）
+            if book_progress.get("author") != fixed:
+                progress[name] = {**book_progress, "author": fixed}
+                _save_progress(progress)
         else:
             author = saved_author
     elif author and author != "未知作者":
-        # 提取到真实作者，存到进度文件中
-        progress[name] = {**book_progress, "author": author}
-        _save_progress(progress)
+        # 提取到真实作者，仅当进度文件中尚未保存时才写入（避免每次请求写盘）
+        if book_progress.get("author") != author:
+            progress[name] = {**book_progress, "author": author}
+            _save_progress(progress)
 
     return LegadoBook(
         name=name,
@@ -192,6 +194,17 @@ def get_book_content(book_url: str, chapter_index: int) -> str:
 
 # ─── 进度保存 ───────────────────────────────────────
 
+def _sanitize_field(value: str, max_len: int = 50) -> str:
+    """净化 Legado 外部传入的字段：去 HTML 标签/控制字符、限制长度，防存储型 XSS。"""
+    if not value:
+        return ""
+    # 去标签（<...>）
+    value = re.sub(r"<[^>]*>", "", value)
+    # 去控制字符（含 CRLF）
+    value = re.sub(r"[\x00-\x1f\x7f]", "", value)
+    return value.strip()[:max_len]
+
+
 def save_book_progress(
     name: str,
     author: str,
@@ -200,11 +213,17 @@ def save_book_progress(
     dur_chapter_title: str = "",
     dur_chapter_time: int = 0,
 ) -> None:
-    """保存阅读进度到 JSON 文件。"""
+    """保存阅读进度到 JSON 文件（字段净化防存储型 XSS）。"""
+    # 净化外部输入：书名/作者/章节标题去标签、限长（Legado 接口无认证，须防御）
+    name = _sanitize_field(name, 200)
+    author = _sanitize_field(author, 50)
+    dur_chapter_title = _sanitize_field(dur_chapter_title, 200)
+    if not name:
+        return
     progress = _load_progress()
     progress[name] = {
-        "durChapterIndex": dur_chapter_index,
-        "durChapterPos": dur_chapter_pos,
+        "durChapterIndex": max(0, int(dur_chapter_index or 0)),
+        "durChapterPos": max(0, int(dur_chapter_pos or 0)),
         "durChapterTitle": dur_chapter_title,
         "durChapterTime": dur_chapter_time or int(time.time() * 1000),
         "author": author,

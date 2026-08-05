@@ -7,7 +7,7 @@
 <link rel="manifest" href="/static/manifest.json">
 <link rel="icon" type="image/png" href="/static/icons/icon-192.png">
 <title>文件管理</title>
-<link rel="stylesheet" href="/static/css/pages.css">
+<link rel="stylesheet" href="{{ asset('css/pages.css') }}">
 </head>
 <body>
 <div class="toolbar">
@@ -35,7 +35,7 @@
 <td>{{ f.mod_time }}</td>
 <td class="actions">
 <a href="{{ f.dl_url }}" class="btn-download" download>下载</a>
-<form method="post" action="/api/v1/novels/{{ f.encoded_fn }}/delete" class="delete-form" onsubmit="return confirm('确定删除 {{ f.safe_fn }}？');">
+<form method="post" action="/api/v1/novels/{{ f.encoded_fn }}/delete" class="delete-form" onsubmit="return confirm('确定删除 {{ f.safe_fn_js }}？');">
 <button type="submit" class="btn-delete">删除</button>
 </form>
 <form method="post" action="/api/v1/novels/{{ f.encoded_fn }}/hide" class="delete-form">

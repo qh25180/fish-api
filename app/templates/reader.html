@@ -7,7 +7,7 @@
 <link rel="manifest" href="/static/manifest.json">
 <link rel="icon" type="image/png" href="/static/icons/icon-192.png">
 <title>文本阅读</title>
-<link rel="stylesheet" href="/static/css/reader.css">
+<link rel="stylesheet" href="{{ asset('css/reader.css') }}">
 </head>
 <body>
 <div class="container">
@@ -360,9 +360,9 @@ window.QHAPI_CONFIG = {
         const li = document.createElement('li');
         li.className = 'book-item';
         const progress = b.durChapterTitle ? '上次阅读: ' + b.durChapterTitle : '未阅读';
-        const author = b.author && b.author !== '未知作者' ? ' · ' + b.author : '';
+        const author = b.author && b.author !== '未知作者' ? ' · ' + escHtml(b.author) : '';
         li.innerHTML = '<div class="book-name-lg">' + escHtml(b.name) + '</div>'
-          + '<div class="book-info">' + escHtml(progress) + author + ' · ' + b.totalChapterNum + ' 章</div>';
+          + '<div class="book-info">' + escHtml(progress) + author + ' · ' + Number(b.totalChapterNum || 0) + ' 章</div>';
         li.onclick = () => selectBook(i);
         list.appendChild(li);
       });
@@ -917,8 +917,15 @@ window.QHAPI_CONFIG = {
   }
 
   function htmlToText(html) {
-    const d = document.createElement('div'); d.innerHTML = html;
-    return d.textContent || d.innerText || '';
+    // 安全解析：用 DOMParser 而非 innerHTML，避免恶意 HTML（<img onerror> 等）触发
+    try {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      return doc.body.textContent || '';
+    } catch (e) {
+      // 兜底：直接剥除标签（不做 innerHTML，防 XSS）
+      const plain = String(html).replace(/<[^>]*>/g, '');
+      return plain.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    }
   }
 
   // ─── 窗口调整 ──────────────────────

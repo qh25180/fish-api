@@ -64,7 +64,6 @@ class DownloadResponse(BaseModel):
     """Response for download operation."""
     filename: str
     original_filename: str
-    save_path: str
     file_size: int
     renamed: bool
 
@@ -72,6 +71,5 @@ class DownloadResponse(BaseModel):
 class UploadResponse(BaseModel):
     """Response for file upload operation."""
     filename: str
-    save_path: str
     file_size: int
     renamed: bool

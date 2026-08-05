@@ -7,7 +7,7 @@
 <link rel="manifest" href="/static/manifest.json">
 <link rel="icon" type="image/png" href="/static/icons/icon-192.png">
 <title>文件上传</title>
-<link rel="stylesheet" href="/static/css/pages.css">
+<link rel="stylesheet" href="{{ asset('css/pages.css') }}">
 <style>
   form { border: 1px solid #ddd; padding: 24px; border-radius: 8px; background: #fafafa; }
   label { display: block; margin: 12px 0 4px; font-weight: bold; }
@@ -46,7 +46,7 @@
   <button type="submit" id="submitBtn">上传</button>
   <div class="tip">支持的文件类型: {{ file_exts }}</div>
 </form>
-<script src="/static/js/qhapi.js"></script>
+<script src="{{ asset('js/qhapi.js') }}"></script>
 <script>
 (function () {
   'use strict';
@@ -63,6 +63,10 @@
   const status = document.getElementById('status');
   const submitBtn = document.getElementById('submitBtn');
 
+  function escHtml(s) {
+    const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
+  }
+
   function formatSize(bytes) {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
@@ -74,7 +78,7 @@
     if (!f) { fileInfo.style.display = 'none'; return; }
     const totalChunks = Math.ceil(f.size / CHUNK_SIZE);
     fileInfo.style.display = 'block';
-    fileInfo.innerHTML = '<b>' + f.name + '</b><br>大小: ' + formatSize(f.size) + ' | 分片: ' + totalChunks + ' × ' + formatSize(CHUNK_SIZE);
+    fileInfo.innerHTML = '<b>' + escHtml(f.name) + '</b><br>大小: ' + formatSize(f.size) + ' | 分片: ' + totalChunks + ' × ' + formatSize(CHUNK_SIZE);
   });
 
   form.addEventListener('submit', async function (e) {

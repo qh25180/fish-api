@@ -12,6 +12,14 @@ from app.sources import BaseSource, register
 from app.utils.meta_util import extract_meta
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """禁止自动跟随重定向（防重定向链 SSRF：攻击者源返回 302 → 内网地址）。"""
+
+    def redirect_request(self, *args, **kwargs):
+        # 返回 None 表示不跟随，让 urlopen 抛 HTTPError（3xx）
+        return None
+
+
 @register("b")
 class SourceB(BaseSource):
     title = "源B"
@@ -67,44 +75,109 @@ class SourceB(BaseSource):
         return results[:30]
 
     def get_download_url(self, book_id: str) -> str:
-        encoded = urllib.parse.quote(book_id)
+        encoded = urllib.parse.quote(book_id, safe='/:')
         return f"{self._base()}/{encoded}"
 
     def download_and_extract(self, book_id: str, target_dir: str) -> str | None:
-        filename = book_id
+        # 安全：book_id 仅取 basename + 扩展名白名单（防路径穿越/任意文件写）
+        filename = os.path.basename(book_id)
         ext = os.path.splitext(filename)[1].lower()
-        file_path = os.path.join(target_dir, filename)
+        if ext not in (".rar", ".zip", ".txt", ""):
+            return None
+        if not filename:
+            return None
+        # 目标目录必须是配置的小说目录（防穿越）
+        target_dir = os.path.realpath(target_dir)
+        file_path = os.path.realpath(os.path.join(target_dir, filename))
+        if not file_path.startswith(target_dir + os.sep):
+            return None
 
         # 已下载则直接返回
         if os.path.exists(file_path):
             return file_path
 
-        # 下载
+        # 下载（单次编码，防二次 % 编码破坏中文文件名）
         url = self.get_download_url(book_id)
         parsed = urllib.parse.urlparse(url)
-        safe_url = f"{parsed.scheme}://{parsed.netloc}{urllib.parse.quote(parsed.path, safe='/:')}"
+        # 校验 hostname 与 scheme（防 SSRF/非 http 协议）
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return None
+        safe_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
         try:
+            # 禁用系统代理 + 禁用自动重定向（防代理逃逸/重定向链 SSRF）
+            opener = urllib.request.build_opener(
+                urllib.request.ProxyHandler({}),
+                _NoRedirectHandler(),  # 移除自动重定向跟随
+            )
             req = urllib.request.Request(safe_url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                data = resp.read()
-                os.makedirs(target_dir, exist_ok=True)
+            # 流式下载 + 大小限制（防 OOM/磁盘炸弹）
+            max_size = settings.max_file_size_mb * 1024 * 1024
+            os.makedirs(target_dir, exist_ok=True)
+            with opener.open(req, timeout=120) as resp:
+                # 不自动跟随重定向：3xx 直接拒绝（Alist 直链不应重定向）
+                written = 0
                 with open(file_path, "wb") as f:
-                    f.write(data)
+                    while True:
+                        chunk = resp.read(65536)
+                        if not chunk:
+                            break
+                        written += len(chunk)
+                        if written > max_size:
+                            f.close()
+                            os.remove(file_path)
+                            return None
+                        f.write(chunk)
         except Exception:
             return None
 
         if not os.path.exists(file_path):
             return None
 
-        # 解压
-        if ext == ".rar" and subprocess.run(["unrar", "e", "-o+", file_path, target_dir],
-                                             capture_output=True, timeout=60).returncode == 0:
-            os.remove(file_path)
-            # 查找解压后的同名文件
-            stem = filename.rsplit(".", 1)[0]
-            for f in os.listdir(target_dir):
-                if f.startswith(stem):
-                    return os.path.join(target_dir, f)
+        # 解压到独立临时子目录，防 zip-slip（恶意条目 ../ 写出目标目录）
+        if ext in (".rar", ".zip"):
+            import tempfile
+            import shutil
+            tmp_dir = tempfile.mkdtemp(prefix="qb_srcb_", dir=target_dir)
+            try:
+                if ext == ".rar":
+                    ok = subprocess.run(
+                        ["unrar", "e", "-o+", file_path, tmp_dir],
+                        capture_output=True, timeout=60,
+                    ).returncode == 0
+                else:
+                    ok = subprocess.run(
+                        ["unzip", "-o", "-j", file_path, "-d", tmp_dir],
+                        capture_output=True, timeout=60,
+                    ).returncode == 0
+                if ok:
+                    # 解压结果大小限制（防压缩炸弹占满磁盘）
+                    max_size = settings.max_file_size_mb * 1024 * 1024
+                    total_extracted = sum(
+                        os.path.getsize(os.path.join(tmp_dir, f))
+                        for f in os.listdir(tmp_dir)
+                        if os.path.isfile(os.path.join(tmp_dir, f))
+                    )
+                    if total_extracted > max_size:
+                        return None
+                    # 精确匹配解压出的同名 txt（非前缀模糊）
+                    stem = filename.rsplit(".", 1)[0]
+                    for f in os.listdir(tmp_dir):
+                        # 校验解压文件在临时目录内
+                        cand = os.path.realpath(os.path.join(tmp_dir, f))
+                        if not cand.startswith(tmp_dir + os.sep):
+                            continue
+                        base = os.path.basename(cand)
+                        if base == stem or base == stem + ".txt":
+                            # 移动到目标目录（仅当目标不存在）
+                            dest = os.path.join(target_dir, base)
+                            if not os.path.exists(dest):
+                                shutil.move(cand, dest)
+                            return dest
+            finally:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            return None
 
         return file_path
 

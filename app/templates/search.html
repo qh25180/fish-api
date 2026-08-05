@@ -7,7 +7,7 @@
 <link rel="manifest" href="/static/manifest.json">
 <link rel="icon" type="image/png" href="/static/icons/icon-192.png">
 <title>书籍搜索</title>
-<link rel="stylesheet" href="/static/css/search.css">
+<link rel="stylesheet" href="{{ asset('css/search.css') }}">
 <script>window.QHAPI_CONFIG = { token: '{{ token }}' };</script>
 </head>
 <body>
@@ -23,8 +23,8 @@
 </div>
 <div id="status"></div>
 <div id="results"></div>
-<script src="/static/js/qhapi.js"></script>
-<script src="/static/js/search.js"></script>
+<script src="{{ asset('js/qhapi.js') }}"></script>
+<script src="{{ asset('js/search.js') }}"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

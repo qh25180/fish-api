@@ -45,7 +45,10 @@ def _safe_path(filename: str) -> Path:
     novels_dir = settings.text_files_dir.resolve()
     full_path = (novels_dir / safe_name).resolve()
 
-    if not str(full_path).startswith(str(novels_dir)):
+    # 严格校验：路径必须在 novels_dir 内（relative_to 比前缀比较更安全）
+    try:
+        full_path.relative_to(novels_dir)
+    except ValueError:
         raise ValueError("Path traversal detected: invalid file path")
 
     return full_path

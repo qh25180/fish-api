@@ -28,11 +28,13 @@ from app.models import (
 from app.config import settings
 from app.security import token_for_url, request_token_ok
 from app.services import file_service, download_service
+from app.utils.assets import register_asset_helper
 
 router = APIRouter(prefix="/api/v1/novels", tags=["novels"])
 
 # Jinja2 模板：HTML 从 f-string 迁移到独立模板文件
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
+register_asset_helper(templates)
 
 
 def _check_token(request: Request = None) -> None:
@@ -292,7 +294,6 @@ async def upload_file(
 
     return UploadResponse(
         filename=save_path.name,
-        save_path=str(save_path),
         file_size=file_size,
         renamed=renamed,
     )
@@ -352,11 +353,29 @@ async def upload_init(
 
     if total_size > settings.max_file_size_mb * 1024 * 1024:
         raise HTTPException(status_code=400, detail=f"文件超过大小限制 {settings.max_file_size_mb}MB")
+    if total_size < 1:
+        raise HTTPException(status_code=400, detail="total_size 无效")
 
+    # 分片数上限：单块最小 64KB → 最多约 800 块（防 total_chunks 巨大造成 DoS）
     if total_chunks < 1:
         raise HTTPException(status_code=400, detail="分片数不能小于 1")
+    max_chunks = (settings.max_file_size_mb * 1024 * 1024 // (64 * 1024)) + 100
+    if total_chunks > max_chunks:
+        raise HTTPException(status_code=400, detail=f"分片数过多，上限 {max_chunks}")
 
     _cleanup_stale_uploads()
+
+    # 活动会话数上限（防认证用户开无数会话占盘 DoS）
+    max_sessions = 20
+    try:
+        active = len([d for d in _upload_tmp_dir().iterdir() if d.is_dir()])
+        if active >= max_sessions:
+            raise HTTPException(
+                status_code=429,
+                detail=f"上传会话过多（上限 {max_sessions}），请稍后再试",
+            )
+    except FileNotFoundError:
+        pass
 
     upload_id = str(uuid.uuid4())
     upload_dir = _upload_tmp_dir() / upload_id
@@ -395,8 +414,15 @@ async def upload_chunk(
         raise HTTPException(status_code=400, detail=f"分片序号无效，有效范围: 0-{meta['total_chunks']-1}")
 
     chunk_path = upload_dir / f"chunk_{chunk_index}"
+    # 单块大小限制：不允许单块超过 total_size + 1MB 余量（防绕过总量限制）
+    written = 0
     async with aiofiles.open(chunk_path, "wb") as f:
         while data := await chunk.read(65536):
+            written += len(data)
+            if written > meta.get("total_size", 0) + 1024 * 1024:
+                await f.close()
+                chunk_path.unlink(missing_ok=True)
+                raise HTTPException(status_code=400, detail="单块超过总大小限制")
             await f.write(data)
 
     return {"success": True, "chunk_index": chunk_index}
@@ -443,11 +469,17 @@ async def upload_complete(
 
     file_size = save_path.stat().st_size
 
+    # 安全：合并后复查总大小（防绕过总量限制）
+    max_size = settings.max_file_size_mb * 1024 * 1024
+    if file_size > max_size:
+        save_path.unlink(missing_ok=True)
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        raise HTTPException(status_code=400, detail=f"文件超过大小限制 {settings.max_file_size_mb}MB")
+
     shutil.rmtree(upload_dir, ignore_errors=True)
 
     return UploadResponse(
         filename=save_path.name,
-        save_path=str(save_path),
         file_size=file_size,
         renamed=renamed,
     )
@@ -510,10 +542,21 @@ async def files_page(
     for f in files:
         safe_fn = html_mod.escape(f.filename)
         encoded_fn = quote(f.filename, safe="")
+        # JS 字符串安全：先 HTML 转义，再把引号实体与反斜杠做 JS 转义（防内联 JS 单引号逃逸 XSS）
+        # 顺序：转义反斜杠 → 单引号 → HTML 转义后的 &#x27; 实体
+        def _js_safe(s: str) -> str:
+            return (html_mod.escape(s)
+                    .replace("\\", "\\\\")
+                    .replace("&#x27;", "\\'")
+                    .replace("&#34;", '\\"'))
+        safe_fn_js = _js_safe(f.filename)
+        author_js = _js_safe(f.author)
         book_name = Path(f.filename).stem
         is_hidden = book_name in hidden_books
         row_list.append({
             "safe_fn": safe_fn,
+            "safe_fn_js": safe_fn_js,
+            "author_js": author_js,
             "encoded_fn": encoded_fn,
             "dl_url": f"/api/v1/novels/{encoded_fn}/download",
             "size_hint": _format_file_size(f.file_size),
@@ -560,7 +603,7 @@ async def delete_file(
     如果配置了 API_TOKEN，需传入一致的 token。
     浏览器请求成功后重定向回文件管理页面。
     """
-    accept = request.headers.get("accept", "") if request else "" if request else ""
+    accept = request.headers.get("accept", "") if request else ""
     is_browser = "text/html" in accept
 
     if not settings.file_download_enabled:
@@ -649,7 +692,7 @@ async def hide_book(
     request: Request = None,
 ):
     """隐藏/显示书籍（从阅读器隐藏）。"""
-    accept = request.headers.get("accept", "") if request else "" if request else ""
+    accept = request.headers.get("accept", "") if request else ""
     is_browser = "text/html" in accept
 
     if not _token_ok(request):
@@ -688,7 +731,7 @@ async def rename_book(
     request: Request = None,
 ):
     """重命名书籍文件，同步更新进度文件。"""
-    accept = request.headers.get("accept", "") if request else "" if request else ""
+    accept = request.headers.get("accept", "") if request else ""
     is_browser = "text/html" in accept
 
     if not _token_ok(request):
@@ -718,6 +761,13 @@ async def rename_book(
     safe_new_name = os.path.basename(new_name.strip())
     if not safe_new_name:
         err_msg = "新名称不能为空"
+        if is_browser:
+            return RedirectResponse(url=f"/api/v1/novels/files?error={quote(err_msg)}", status_code=303)
+        raise HTTPException(status_code=400, detail=err_msg)
+
+    # 拒绝 . / .. / 含路径分隔符的异常名称
+    if safe_new_name in (".", "..") or "/" in safe_new_name or "\\" in safe_new_name:
+        err_msg = "无效的文件名"
         if is_browser:
             return RedirectResponse(url=f"/api/v1/novels/files?error={quote(err_msg)}", status_code=303)
         raise HTTPException(status_code=400, detail=err_msg)
@@ -975,8 +1025,8 @@ async def download_novel(
     is_browser = "text/html" in accept
 
     if url is None and body is not None:
+        # 仅取 body.url；body.token 不参与认证（认证只认 Bearer/Cookie，防误用）
         url = body.url
-        token = token or body.token
 
     if not settings.remote_download_enabled:
         err_msg = "远程下载功能未启用（REMOTE_DOWNLOAD_ENABLED=false）"
@@ -1057,9 +1107,14 @@ async def download_file(
     if not file_path.is_file():
         raise HTTPException(status_code=400, detail="无效的文件")
 
+    # 安全：文件名消毒（去 CRLF/引号/反斜杠，防 Content-Disposition 响应头注入）
+    safe_filename = re.sub(r'[\r\n"\\]', "", file_path.name)
+    if not safe_filename:
+        safe_filename = "download.txt"
+
     return FileResponse(
         path=str(file_path),
-        filename=file_path.name,
+        filename=safe_filename,
         media_type="application/octet-stream",
     )
 

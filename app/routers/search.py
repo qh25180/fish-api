@@ -13,11 +13,13 @@ from fastapi.templating import Jinja2Templates
 from app.config import settings
 from app.security import token_for_url, request_token_ok
 from app.sources import get_source, list_sources
+from app.utils.assets import register_asset_helper
 
 router = APIRouter(prefix="/api/v1", tags=["search"])
 
 # Jinja2 模板
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
+register_asset_helper(templates)
 
 
 def _redirect_login() -> RedirectResponse:
@@ -148,39 +150,38 @@ async def download_book(
             return {"success": False, "error": "下载或解压失败"}
 
         else:
-            # 源A直接下载
+            # 源A直接下载（走统一安全下载：SSRF 防护 + 流式 + 大小限制）
             download_url = s.get_download_url(book_id)
             if not download_url:
                 return {"success": False, "error": "未找到下载链接"}
 
-            import urllib.parse
-            parsed = urllib.parse.urlparse(download_url)
-            safe_url = f"{parsed.scheme}://{parsed.netloc}{urllib.parse.quote(parsed.path, safe='/:')}"
+            from app.services import download_service
+            result = await download_service.download_novel(download_url)
 
-            import urllib.request
-            req = urllib.request.Request(safe_url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                data = resp.read()
-
-            filename = os.path.basename(download_url)
-            filepath = dl_dir / filename
-
-            # 重命名（如需，按 FILE_RENAME_MODE 配置）
+            # 按 FILE_RENAME_MODE 配置重命名
             from app.utils.pinyin_util import build_rename_name
-            rename_name = build_rename_name(filename)
-            filepath = dl_dir / rename_name
-
-            with open(filepath, "wb") as f:
-                f.write(data)
+            final_path = dl_dir / result["filename"]
+            if build_rename_name(result["filename"]) != result["filename"]:
+                new_name = build_rename_name(result["filename"])
+                new_path = dl_dir / new_name
+                if not new_path.exists():
+                    final_path.rename(new_path)
+                    final_path = new_path
 
             # 保存作者
-            _save_author_to_progress(filepath.name, detected_author)
+            _save_author_to_progress(final_path.name, detected_author)
 
-            return {"success": True, "filename": filepath.name,
-                    "size": len(data), "renamed": rename_name != filename}
+            return {"success": True, "filename": final_path.name,
+                    "size": result["file_size"], "renamed": result["renamed"]}
 
-    except Exception as e:
+    except ValueError as e:
+        # 安全类错误（SSRF 拦截、大小限制）→ 友好提示
         return {"success": False, "error": str(e)}
+    except Exception:
+        # 其他异常：记录日志，返回通用错误（防泄露 URL/IP/路径）
+        import logging
+        logging.getLogger(__name__).exception("书籍下载失败")
+        return {"success": False, "error": "下载失败，请稍后重试"}
 
 
 def _save_author_to_progress(filename: str, author: str):

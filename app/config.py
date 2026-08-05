@@ -15,6 +15,13 @@ class Settings(BaseSettings):
     api_token: str = "qhapi-token"
     # 登录 Cookie 有效期（天）；0 表示会话级（关闭浏览器即失效）
     token_expire_days: int = 30
+    # CORS 白名单来源（逗号分隔；留空 = 允许所有来源，仅建议局域网使用）
+    allowed_origins: str = ""
+    # 登录失败限流：同一 IP 每分钟最大失败次数
+    login_max_fail_per_minute: int = 5
+    # 信任的反向代理来源 IP（逗号分隔）：使 X-Forwarded-For/Proto 生效，
+    # 用于登录限流按真实客户端 IP 与 HTTPS Cookie Secure 判断。留空 = 不信任代理头。
+    proxy_trusted_ips: str = ""
     # 单个文件最大读取字节数上限（MB），防止大文件 OOM
     max_file_read_size_mb: int = 100
     remote_download_enabled: bool = False
