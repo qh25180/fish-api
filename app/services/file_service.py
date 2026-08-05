@@ -40,6 +40,8 @@ def _safe_path(filename: str) -> Path:
 
     Prevents path traversal attacks by stripping directory components
     and verifying the resolved path is within the allowed directory.
+    同时拒绝隐藏文件（. 开头）与不在文本扩展名白名单内的文件，
+    防 Legado 匿名接口经 get_content/get_chapters 读取内部 JSON 数据。
     """
     safe_name = os.path.basename(filename)
     novels_dir = settings.text_files_dir.resolve()
@@ -50,6 +52,14 @@ def _safe_path(filename: str) -> Path:
         full_path.relative_to(novels_dir)
     except ValueError:
         raise ValueError("Path traversal detected: invalid file path")
+
+    # 拒绝隐藏文件（.legado_progress.json、.meta_cache.json 等内部数据）
+    if safe_name.startswith("."):
+        raise ValueError("不允许访问隐藏文件")
+
+    # 拒绝不在文本扩展名白名单内的文件（.json/.tmp 等）
+    if full_path.suffix.lower() not in settings.text_file_extensions_list:
+        raise ValueError("不支持的文件类型")
 
     return full_path
 
@@ -270,7 +280,9 @@ def _estimate_chapters_and_author_from_head(file_path: Path) -> tuple[int, str]:
 MAX_FILE_READ_SIZE = max(1, settings.max_file_read_size_mb) * 1024 * 1024
 
 
-@lru_cache(maxsize=16)
+# LRU maxsize=4：控制进程内全文缓存内存（4 × 100MB = 400MB 上限）
+# （书架/章节列表走指纹落盘缓存，不依赖此 LRU；正文读取热命中已足够）
+@lru_cache(maxsize=4)
 def _read_and_parse_cached(file_path_str: str) -> tuple[str, tuple]:
     """读取文件全文并解析章节，结果由 LRU 缓存。
 

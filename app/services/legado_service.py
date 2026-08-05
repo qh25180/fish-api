@@ -205,6 +205,10 @@ def _sanitize_field(value: str, max_len: int = 50) -> str:
     return value.strip()[:max_len]
 
 
+# 进度条目数上限（防匿名接口无限写盘 DoS）
+_MAX_PROGRESS_ENTRIES = 5000
+
+
 def save_book_progress(
     name: str,
     author: str,
@@ -221,6 +225,9 @@ def save_book_progress(
     if not name:
         return
     progress = _load_progress()
+    # 条目数上限：超过则拒绝新增（防匿名写盘 DoS）
+    if name not in progress and len(progress) >= _MAX_PROGRESS_ENTRIES:
+        return
     progress[name] = {
         "durChapterIndex": max(0, int(dur_chapter_index or 0)),
         "durChapterPos": max(0, int(dur_chapter_pos or 0)),
@@ -266,7 +273,7 @@ def save_progress_by_chapter(book_url: str, chapter: str) -> None:
     - 标题关键词（如 "启示"）→ 模糊匹配章节标题
     - 完整标题（如 "第一章 外乡人"）→ 忽略空格模糊匹配
     """
-    name = Path(book_url).stem
+    name = _sanitize_field(Path(book_url).stem, 200)
     chapters = qhapi_get_chapters(book_url)
     if not chapters:
         raise ValueError("章节目录为空")

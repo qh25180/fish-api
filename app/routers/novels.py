@@ -425,6 +425,18 @@ async def upload_chunk(
                 raise HTTPException(status_code=400, detail="单块超过总大小限制")
             await f.write(data)
 
+    # 累计大小校验：已上传分片 + 当前块 不得超过 total_size（防分片累计超限占盘）
+    total_size = meta.get("total_size", 0)
+    uploaded_total = 0
+    for i in range(meta.get("total_chunks", 0)):
+        cp = upload_dir / f"chunk_{i}"
+        if cp.exists() and i != chunk_index:
+            uploaded_total += cp.stat().st_size
+    uploaded_total += written
+    if uploaded_total > total_size + 1024 * 1024:
+        chunk_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="分片累计超过总大小限制")
+
     return {"success": True, "chunk_index": chunk_index}
 
 
