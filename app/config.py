@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     download_timeout_seconds: int = 30
     upload_timeout_seconds: int = 300
     api_token: str = "qhapi-token"
+    # 登录 Cookie 有效期（天）；0 表示会话级（关闭浏览器即失效）
+    token_expire_days: int = 30
+    # 单个文件最大读取字节数上限（MB），防止大文件 OOM
+    max_file_read_size_mb: int = 100
     remote_download_enabled: bool = False
     remote_download_allow_intranet: bool = False
     upload_enabled: bool = False
@@ -42,15 +46,23 @@ class Settings(BaseSettings):
     tts_edge_enabled: bool = True
     # 局域网 Piper 引擎开关（需要自建 piper-tts 容器）
     tts_local_enabled: bool = True
-    # 局域网 Piper 服务地址：fish-api 容器内经宿主机网关访问（宿主映射端口 5051）
-    # 若 fish-api 与 piper 在同一 docker 网络，可改为 http://piper-tts:5001
-    tts_local_url: str = "http://172.19.0.1:5051"
+    # 局域网 Piper 服务主机（fish-api 容器内经宿主机网关访问；同网络可填容器名）
+    tts_local_host: str = "172.19.0.1"
+    # 局域网 Piper 服务端口（宿主机映射端口）
+    tts_local_port: int = 5051
+    # 局域网 Piper 当前使用的模型名（仅展示/声明用；Piper HTTP 服务端固定单模型）
+    tts_local_voice: str = "zh_CN-huayan-medium"
     # Edge-TTS 默认语音（晓晓，女声，中文自然）
     tts_edge_voice: str = "zh-CN-XiaoxiaoNeural"
     # 单次合成最大文本长度（超限 400 拒绝）
     tts_max_text_length: int = 8000
     # 合成超时（秒）
     tts_timeout_seconds: int = 120
+
+    @property
+    def tts_local_url(self) -> str:
+        """局域网 Piper 服务完整地址（由 host + port 组合）。"""
+        return f"http://{self.tts_local_host}:{self.tts_local_port}"
 
     @property
     def text_file_extensions_list(self) -> List[str]:

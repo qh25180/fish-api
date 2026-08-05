@@ -68,6 +68,14 @@
     <hr class="settings-sep">
     <label>朗读引擎</label>
     <select class="tts-engine-sel" id="ttsEngineSel"></select>
+    <div class="tts-voice-row" id="ttsEdgeVoiceRow" style="display:none">
+      <label>Edge 语音</label>
+      <select class="tts-engine-sel" id="ttsEdgeVoiceSel"></select>
+    </div>
+    <div class="tts-voice-row" id="ttsLocalVoiceRow" style="display:none">
+      <label>Piper 模型</label>
+      <input class="tts-engine-sel" id="ttsLocalVoiceInput" readonly>
+    </div>
     <label>语速 <span class="range-val-inline" id="ttsRateVal">1.0x</span></label>
     <input type="range" id="ttsRateSlider" min="5" max="20" value="10">
 
@@ -89,7 +97,10 @@
   </div>
 
 <script>
-window.QHAPI_CONFIG = { token: '{{ token }}' };
+window.QHAPI_CONFIG = {
+  token: '{{ token }}',
+  tts: {{ tts_config | tojson }}
+};
 </script>
 {% raw %}
 <script>
@@ -109,6 +120,7 @@ window.QHAPI_CONFIG = { token: '{{ token }}' };
   if (!settings.fontSize) settings = { fontSize: 17, themeIndex: 0 };
   if (!settings.ttsEngine) settings.ttsEngine = 'edge';
   if (!settings.ttsRate) settings.ttsRate = 1.0;
+  if (!settings.ttsEdgeVoice) settings.ttsEdgeVoice = (window.QHAPI_CONFIG.tts || {}).edgeVoice || 'zh-CN-XiaoxiaoNeural';
   let savedSettings = null;
   let sliderTimer = null;
   applyTheme(settings);
@@ -178,15 +190,15 @@ window.QHAPI_CONFIG = { token: '{{ token }}' };
     reflowAfterTheme();
   };
 
-  // 渲染朗读引擎下拉列表
+  // 渲染朗读引擎下拉列表（按服务端开关显隐）
   function renderTtsEngines() {
     const sel = document.getElementById('ttsEngineSel');
     if (!sel) return;
-    const engines = [
-      { id: 'native', name: '浏览器原生语音' },
-      { id: 'edge', name: 'Edge 云语音（微软）' },
-      { id: 'local', name: '局域网 Piper（自建）' },
-    ];
+    const cfg = window.QHAPI_CONFIG.tts || {};
+    const engines = [];
+    if (cfg.localEnabled !== false) engines.push({ id: 'local', name: '局域网 Piper（自建）' });
+    if (cfg.edgeEnabled !== false) engines.push({ id: 'edge', name: 'Edge 云语音（微软）' });
+    engines.push({ id: 'native', name: '浏览器原生语音' });
     sel.innerHTML = '';
     engines.forEach(function(e) {
       const opt = document.createElement('option');
@@ -198,8 +210,55 @@ window.QHAPI_CONFIG = { token: '{{ token }}' };
       }
       sel.appendChild(opt);
     });
-    sel.value = settings.ttsEngine || 'edge';
-    sel.onchange = function() { settings.ttsEngine = sel.value; };
+    // 当前引擎被禁用（配置变更）→ 回退到第一个可用引擎
+    if (!engines.some(function(e) { return e.id === settings.ttsEngine; })) {
+      settings.ttsEngine = engines[0] ? engines[0].id : 'native';
+    }
+    sel.value = settings.ttsEngine;
+    sel.onchange = function() { settings.ttsEngine = sel.value; updateTtsVoiceRows(); };
+    updateTtsVoiceRows();
+  }
+
+  // Edge 语音列表
+  const EDGE_VOICES = [
+    { id: 'zh-CN-XiaoxiaoNeural', name: '晓晓（女声）' },
+    { id: 'zh-CN-XiaoyiNeural',   name: '晓伊（女声）' },
+    { id: 'zh-CN-YunxiNeural',    name: '云希（男声）' },
+    { id: 'zh-CN-YunyangNeural',  name: '云扬（男声）' },
+    { id: 'zh-CN-YunjianNeural',  name: '云健（男声）' },
+    { id: 'zh-CN-XiaohanNeural',  name: '晓涵（女声）' },
+    { id: 'zh-CN-XiaomengNeural', name: '晓梦（女声）' },
+    { id: 'zh-CN-XiaomoNeural',   name: '晓墨（女声）' },
+    { id: 'zh-CN-XiaoruiNeural',  name: '晓睿（女声）' },
+    { id: 'zh-CN-XiaoshuangNeural', name: '晓双（童声）' },
+  ];
+
+  // 渲染 Edge 语音下拉 + 更新各引擎语音行显隐
+  function updateTtsVoiceRows() {
+    const cfg = window.QHAPI_CONFIG.tts || {};
+    // Edge 语音
+    const edgeSel = document.getElementById('ttsEdgeVoiceSel');
+    const edgeRow = document.getElementById('ttsEdgeVoiceRow');
+    if (edgeSel) {
+      edgeSel.innerHTML = '';
+      EDGE_VOICES.forEach(function(v) {
+        const opt = document.createElement('option');
+        opt.value = v.id;
+        opt.textContent = v.name;
+        edgeSel.appendChild(opt);
+      });
+      edgeSel.value = settings.ttsEdgeVoice || cfg.edgeVoice || 'zh-CN-XiaoxiaoNeural';
+      if (!edgeSel.value) edgeSel.value = 'zh-CN-XiaoxiaoNeural';
+      edgeSel.onchange = function() { settings.ttsEdgeVoice = edgeSel.value; };
+    }
+    // Piper 模型（只读展示）
+    const localInput = document.getElementById('ttsLocalVoiceInput');
+    const localRow = document.getElementById('ttsLocalVoiceRow');
+    if (localInput) localInput.value = cfg.localVoice || 'zh_CN-huayan-medium';
+    // 显隐
+    const engine = settings.ttsEngine || 'edge';
+    if (edgeRow) edgeRow.style.display = (engine === 'edge' && cfg.edgeEnabled !== false) ? 'block' : 'none';
+    if (localRow) localRow.style.display = (engine === 'local' && cfg.localEnabled !== false) ? 'block' : 'none';
   }
 
   // 浏览器原生 TTS 支持检测（speechSynthesis 存在 + 有可用 voices 才认为支持）
@@ -618,7 +677,11 @@ window.QHAPI_CONFIG = { token: '{{ token }}' };
           'Content-Type': 'application/json',
           ...(TOKEN ? { 'Authorization': 'Bearer ' + TOKEN } : {})
         },
-        body: JSON.stringify({ engine: engine, text: text }),
+        body: JSON.stringify({
+          engine: engine,
+          text: text,
+          voice: engine === 'edge' ? (settings.ttsEdgeVoice || '') : ''
+        }),
         signal: controller.signal
       });
       if (gen !== ttsGen) return null; // 已取消

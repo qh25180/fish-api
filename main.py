@@ -189,7 +189,9 @@ async def login_submit(
     if not next.startswith("/") or next.startswith("//"):
         next = "/api/v1/novels/pages"
     resp = RedirectResponse(url=next, status_code=302)
-    resp.set_cookie("qhapi_token", token, httponly=False, samesite="lax")
+    # 登录有效期：TOKEN_EXPIRE_DAYS 天（0 = 会话级，关闭浏览器失效）
+    max_age = settings.token_expire_days * 86400 if settings.token_expire_days > 0 else None
+    resp.set_cookie("qhapi_token", token, httponly=False, samesite="lax", max_age=max_age)
     return resp
 
 

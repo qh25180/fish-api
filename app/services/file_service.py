@@ -263,8 +263,8 @@ def _estimate_chapters_and_author_from_head(file_path: Path) -> tuple[int, str]:
 
 # ─── Cache（LRU 缓存，避免同一文件反复读取+解析）───────────────
 
-# 单个文件最大读取字节数（100 MB），防止 OOM
-MAX_FILE_READ_SIZE = 100 * 1024 * 1024
+# 单个文件最大读取字节数（默认 100 MB，可经 MAX_FILE_READ_SIZE_MB 配置），防止 OOM
+MAX_FILE_READ_SIZE = max(1, settings.max_file_read_size_mb) * 1024 * 1024
 
 
 @lru_cache(maxsize=16)

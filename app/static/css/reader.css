@@ -81,6 +81,8 @@ body { font-family: var(--font-family, "Noto Serif SC", serif); background: var(
 .range-val-inline { color: #007acc; font-weight: bold; }
 .tts-engine-sel { width: 100%; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--text-color, #333) 25%, transparent); border-radius: 6px; background: var(--card-bg, #fff); color: var(--text-color, #333); font-size: 14px; margin: 4px 0 4px; }
 .tts-engine-sel:focus { outline: none; border-color: #007acc; }
+.tts-voice-row { margin-top: 4px; }
+.tts-voice-row label { display: block; margin: 8px 0 2px; font-size: 12px; color: color-mix(in srgb, var(--text-color, #333) 60%, transparent); }
 /* 朗读高亮：当前朗读句子 */
 /* 朗读高亮：当前朗读句子（增强可见性） */
 .tts-sentence { transition: background-color 0.2s ease; white-space: pre-wrap; }

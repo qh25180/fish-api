@@ -1074,8 +1074,19 @@ async def read_page(
     if not _token_ok(request):
         return _redirect_login()
 
+    # TTS 配置注入前端：引擎开关/当前 Piper 模型名（前端按配置显隐引擎选项）
+    tts_config = {
+        "enabled": settings.tts_enabled,
+        "edgeEnabled": settings.tts_edge_enabled,
+        "localEnabled": settings.tts_local_enabled,
+        "localVoice": settings.tts_local_voice,
+        "edgeVoice": settings.tts_edge_voice,
+    }
     return templates.TemplateResponse(
         request=request,
         name="reader.html",
-        context={"token": quote(token_for_url(request), safe="")},
+        context={
+            "token": quote(token_for_url(request), safe=""),
+            "tts_config": tts_config,
+        },
     )
